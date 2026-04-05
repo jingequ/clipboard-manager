@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ClipboardManager.Application\ClipboardManager.Application.csproj" />
+    <ProjectReference Include="..\ClipboardManager.Domain\ClipboardManager.Domain.csproj" />
+    <ProjectReference Include="..\ClipboardManager.Shared\ClipboardManager.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.4" />
+  </ItemGroup>
+</Project>

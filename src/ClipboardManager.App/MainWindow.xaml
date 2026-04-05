@@ -1,0 +1,271 @@
+<Window x:Class="ClipboardManager.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:ClipboardManager.App.ViewModels"
+        mc:Ignorable="d"
+        Title="Clipboard Manager"
+        Width="1120"
+        Height="700"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False">
+    <Border Margin="18"
+            Padding="18"
+            Background="{StaticResource PanelBackgroundBrush}"
+            BorderBrush="{StaticResource PanelBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="24">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Height="56"
+                    Background="{StaticResource SearchBackgroundBrush}"
+                    CornerRadius="14"
+                    BorderBrush="{StaticResource SearchBorderBrush}"
+                    BorderThickness="1">
+                <TextBox x:Name="SearchTextBox"
+                         Margin="18,0"
+                         VerticalContentAlignment="Center"
+                         FontSize="20"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Foreground="{StaticResource PrimaryTextBrush}"
+                         Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
+            </Border>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.2*" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="1*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Background="{StaticResource LeftPanelBrush}" CornerRadius="18" Padding="12">
+                    <Grid>
+                        <ListBox x:Name="HistoryListBox"
+                                 ItemsSource="{Binding Items}"
+                                 SelectedItem="{Binding SelectedItem}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 SelectionChanged="HistoryListBox_OnSelectionChanged"
+                                 MouseDoubleClick="HistoryListBox_OnMouseDoubleClick"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Style>
+                                <Style TargetType="ListBox">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsClearCommandActive}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.Style>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,8" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Height" Value="64" />
+                                    <EventSetter Event="MouseEnter" Handler="HistoryListBoxItem_OnMouseEnter" />
+                                    <EventSetter Event="PreviewMouseLeftButtonUp" Handler="HistoryListBoxItem_OnPreviewMouseLeftButtonUp" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Root" Padding="12,10" Background="Transparent" CornerRadius="12">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ClipboardItemViewModel}">
+                                        <Grid Height="44">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="18" Text="{Binding TypeGlyph}" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource PrimaryTextBrush}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Margin="0,4,0,0" Text="{Binding Subtitle}" Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Top" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Text="{Binding TimeLabel}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsClearCommandActive}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+
+                            <Border Padding="12,10"
+                                    Background="{StaticResource AccentBrush}"
+                                    CornerRadius="12">
+                                <Grid Height="44">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="32" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               VerticalAlignment="Center"
+                                               FontSize="18"
+                                               Text="⌫" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding CommandPreview}"
+                                                   Foreground="{StaticResource PrimaryTextBrush}"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="12,0,0,0"
+                                               VerticalAlignment="Top"
+                                               Foreground="{StaticResource PrimaryTextBrush}"
+                                               FontSize="16"
+                                               Text="↩" />
+                                </Grid>
+                            </Border>
+
+                            <Border Margin="0,8,0,0"
+                                    Padding="12,10"
+                                    Background="Transparent"
+                                    CornerRadius="12">
+                                <Grid Height="44">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="32" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               VerticalAlignment="Center"
+                                               FontSize="18"
+                                               Foreground="{StaticResource MutedTextBrush}"
+                                               Text="i" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Clear Clipboard History"
+                                                   Foreground="{StaticResource PrimaryTextBrush}"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Margin="0,4,0,0"
+                                                   Text="{Binding ClearCommandUsage}"
+                                                   Foreground="{StaticResource SecondaryTextBrush}"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2" Background="{StaticResource RightPanelBrush}" CornerRadius="18" Padding="24">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid>
+                            <StackPanel x:Name="EmptyPreviewPanel">
+                                <Border Padding="18" CornerRadius="18" Background="{StaticResource PreviewCardBrush}">
+                                    <TextBlock x:Name="EmptyPreviewText"
+                                               Text="Select an item to preview"
+                                               Foreground="{StaticResource SecondaryTextBrush}"
+                                               FontSize="16"
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </StackPanel>
+
+                            <ScrollViewer x:Name="TextPreviewPanel"
+                                          Visibility="Collapsed"
+                                          VerticalScrollBarVisibility="Auto">
+                                <TextBlock x:Name="TextPreviewContent"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource PrimaryTextBrush}"
+                                           FontSize="16" />
+                            </ScrollViewer>
+
+                            <StackPanel x:Name="FilePreviewPanel"
+                                        Visibility="Collapsed"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center">
+                                <Image x:Name="FilePreviewIcon" Width="96" Height="96" Stretch="Uniform" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FilePreviewText"
+                                           Margin="0,12,0,0"
+                                           FontSize="16"
+                                           Foreground="{StaticResource PrimaryTextBrush}"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+
+                            <Viewbox x:Name="ImagePreviewBox"
+                                     Visibility="Collapsed"
+                                     Stretch="Uniform"
+                                     StretchDirection="DownOnly">
+                                <Image x:Name="ImagePreviewControl"
+                                       Stretch="None"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       SnapsToDevicePixels="True"
+                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                            </Viewbox>
+                        </Grid>
+                        <TextBlock x:Name="PreviewFooterText"
+                                   Grid.Row="1"
+                                   Margin="0,24,0,0"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{StaticResource MutedTextBrush}"
+                                   FontSize="14" />
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="3" Margin="4,16,4,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Foreground="{StaticResource MutedTextBrush}" Text="Enter to copy again • Delete to remove" />
+                <TextBlock Grid.Column="1" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" Text="{Binding StatusMessage}" />
+                <TextBlock Grid.Column="2" HorizontalAlignment="Right" Foreground="{StaticResource MutedTextBrush}" Text="Esc to close" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

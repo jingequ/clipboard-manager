@@ -1,0 +1,13 @@
+bin/
+obj/
+.vs/
+.idea/
+artifacts/
+
+*.user
+*.suo
+*.cache
+*.pdb
+
+Thumbs.db
+Desktop.ini
