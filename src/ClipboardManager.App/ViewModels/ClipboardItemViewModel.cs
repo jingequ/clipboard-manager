@@ -40,8 +40,8 @@ public sealed class ClipboardItemViewModel
         TimeLabel = item.CreatedAt.ToLocalTime().ToString("HH:mm");
         PreviewText = item.Type switch
         {
-            ClipboardItemType.Text => item.TextContent ?? string.Empty,
-            ClipboardItemType.RichText => item.TextContent ?? string.Empty,
+            ClipboardItemType.Text => TruncatePreview(item.TextContent),
+            ClipboardItemType.RichText => TruncatePreview(item.TextContent),
             ClipboardItemType.FileList => string.Join(Environment.NewLine, item.Files?.Select((file, index) => $"{index + 1}. {file.Path}") ?? []),
             _ => item.DisplayMetadata ?? item.Summary ?? string.Empty
         };
@@ -171,6 +171,12 @@ public sealed class ClipboardItemViewModel
         thread.IsBackground = true;
         thread.Start();
         return tcs.Task;
+    }
+
+    private static string TruncatePreview(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        return text.Length <= 4000 ? text : text[..4000] + "\n\n... (Content truncated for preview)";
     }
 
     private static BitmapSource? LoadBitmapWithoutLock(string path)

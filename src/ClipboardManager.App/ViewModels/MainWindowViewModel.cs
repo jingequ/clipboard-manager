@@ -99,10 +99,13 @@ public sealed class MainWindowViewModel : ViewModelBase
                 await Task.Delay(150, cancellationToken);
             }
 
-            var results = await _historyService.SearchAsync(SearchQuery, 100, cancellationToken);
-            if (cancellationToken.IsCancellationRequested) return;
+            var viewModels = await Task.Run(async () => 
+            {
+                var searchResults = await _historyService.SearchAsync(SearchQuery, 100, cancellationToken);
+                if (cancellationToken.IsCancellationRequested) return new List<ClipboardItemViewModel>();
+                return searchResults.Select(result => new ClipboardItemViewModel(result)).ToList();
+            }, cancellationToken);
 
-            var viewModels = results.Select(result => new ClipboardItemViewModel(result)).ToList();
             if (cancellationToken.IsCancellationRequested) return;
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
