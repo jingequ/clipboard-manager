@@ -203,7 +203,7 @@ public partial class MainWindow : Window
                     }
                     break;
                 case ClipboardItemType.FileList:
-                    var fileIcon = await Task.Run(() => selectedItem.GetPreviewImage(), token);
+                    var fileIcon = await selectedItem.GetPreviewImageAsync(token);
                     if (token.IsCancellationRequested) return;
 
                     FilePreviewIcon.Source = fileIcon;

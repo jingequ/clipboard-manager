@@ -138,19 +138,39 @@ public sealed class ClipboardItemViewModel
         return extension is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".ico";
     }
 
-    public BitmapSource? GetPreviewImage()
+    public async Task<BitmapSource?> GetPreviewImageAsync(CancellationToken cancellationToken = default)
     {
         if (Model.Type == ClipboardItemType.Image && !string.IsNullOrWhiteSpace(Model.ImagePath) && File.Exists(Model.ImagePath))
         {
-            return LoadBitmapWithoutLock(Model.ImagePath);
+            return await Task.Run(() => LoadBitmapWithoutLock(Model.ImagePath), cancellationToken);
         }
 
         if (Model.Type == ClipboardItemType.FileList)
         {
-            return CreateFilePreviewImage(Model.Files?.FirstOrDefault());
+            return await RunOnStaThreadAsync(() => CreateFilePreviewImage(Model.Files?.FirstOrDefault()));
         }
 
         return null;
+    }
+
+    private static Task<BitmapSource?> RunOnStaThreadAsync(Func<BitmapSource?> action)
+    {
+        var tcs = new TaskCompletionSource<BitmapSource?>();
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                tcs.SetResult(action());
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        return tcs.Task;
     }
 
     private static BitmapSource? LoadBitmapWithoutLock(string path)
