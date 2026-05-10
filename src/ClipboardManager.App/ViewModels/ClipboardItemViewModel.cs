@@ -31,8 +31,8 @@ public sealed class ClipboardItemViewModel
         };
         TypeGlyph = item.Type switch
         {
-            ClipboardItemType.Text => "\uE7C3", // Text
-            ClipboardItemType.RichText => "\uE179", // RichText
+            ClipboardItemType.Text => "T",
+            ClipboardItemType.RichText => "RT",
             ClipboardItemType.Image => "\uEB9F", // Image
             ClipboardItemType.FileList => item.Files?.FirstOrDefault()?.IsDirectory == true ? "\uE8B7" : "\uE723",
             _ => "•"
