@@ -58,7 +58,6 @@ public sealed class ClipboardItemViewModel
             _ => string.Empty
         };
         Footer = item.CreatedAt.ToLocalTime().ToString("MMM dd, HH:mm");
-        PreviewImage = TryCreatePreviewImage();
     }
 
     public ClipboardItem Model { get; }
@@ -69,7 +68,21 @@ public sealed class ClipboardItemViewModel
     public string PreviewText { get; }
     public string PreviewDetails { get; }
     public string Footer { get; }
-    public BitmapSource? PreviewImage { get; }
+    
+    private BitmapSource? _previewImage;
+    private bool _previewImageLoaded;
+    public BitmapSource? PreviewImage
+    {
+        get
+        {
+            if (!_previewImageLoaded)
+            {
+                _previewImageLoaded = true;
+                _previewImage = TryCreatePreviewImage();
+            }
+            return _previewImage;
+        }
+    }
     public Visibility IsTextPreviewVisible => Model.Type is ClipboardItemType.Text or ClipboardItemType.RichText ? Visibility.Visible : Visibility.Collapsed;
     public Visibility IsImagePreviewVisible => Model.Type == ClipboardItemType.Image ? Visibility.Visible : Visibility.Collapsed;
     public Visibility IsFilePreviewVisible => Model.Type == ClipboardItemType.FileList ? Visibility.Visible : Visibility.Collapsed;

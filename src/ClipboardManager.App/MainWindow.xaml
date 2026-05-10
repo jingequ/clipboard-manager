@@ -19,9 +19,6 @@
             BorderBrush="{StaticResource PanelBorderBrush}"
             BorderThickness="1"
             CornerRadius="24">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="40" Direction="270" Opacity="0.4" ShadowDepth="4" Color="Black" />
-        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
