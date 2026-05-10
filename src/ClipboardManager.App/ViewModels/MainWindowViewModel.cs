@@ -16,6 +16,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _statusMessage = "Ready";
     private string _commandPreview = string.Empty;
     private ClearCommandInfo? _clearCommandInfo;
+    private CancellationTokenSource? _searchCts;
 
     public MainWindowViewModel(
         IClipboardHistoryService historyService,
@@ -59,7 +60,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             if (SetProperty(ref _searchQuery, value))
             {
                 UpdateCommandState();
-                _ = RefreshAsync();
+                
+                _searchCts?.Cancel();
+                _searchCts = new CancellationTokenSource();
+                _ = RefreshAsync(_searchCts.Token);
             }
         }
     }
@@ -76,31 +80,54 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    public async Task RefreshAsync()
+    public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             if (IsClearCommandActive)
             {
-                Items.Clear();
-                SelectedItem = null;
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Items.Clear();
+                    SelectedItem = null;
+                });
                 return;
             }
 
-            var results = await _historyService.SearchAsync(SearchQuery);
-            Items.Clear();
-            foreach (var item in results.Select(result => new ClipboardItemViewModel(result)))
+            if (cancellationToken != default)
             {
-                Items.Add(item);
+                await Task.Delay(150, cancellationToken);
             }
 
-            SelectedItem = Items.FirstOrDefault();
-            StatusMessage = Items.Count == 0 ? "No clipboard items yet" : $"{Items.Count} items";
+            var results = await _historyService.SearchAsync(SearchQuery, 100, cancellationToken);
+            if (cancellationToken.IsCancellationRequested) return;
+
+            var viewModels = results.Select(result => new ClipboardItemViewModel(result)).ToList();
+            if (cancellationToken.IsCancellationRequested) return;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                Items.Clear();
+                foreach (var item in viewModels)
+                {
+                    Items.Add(item);
+                }
+
+                SelectedItem = Items.FirstOrDefault();
+                StatusMessage = Items.Count == 0 ? "No clipboard items yet" : $"{Items.Count} items";
+            });
+        }
+        catch (TaskCanceledException)
+        {
+            // Search was cancelled by a newer keystroke, ignore.
         }
         catch (Exception ex)
         {
             _logger.Error("Failed to refresh clipboard history.", ex);
-            StatusMessage = "Failed to refresh history";
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                StatusMessage = "Failed to refresh history";
+            });
         }
     }
 
