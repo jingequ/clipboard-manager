@@ -33,8 +33,8 @@ public sealed class ClipboardItemViewModel
         {
             ClipboardItemType.Text => "T",
             ClipboardItemType.RichText => "RT",
-            ClipboardItemType.Image => "\uEB9F", // Image
-            ClipboardItemType.FileList => item.Files?.FirstOrDefault()?.IsDirectory == true ? "\uE8B7" : "\uE723",
+            ClipboardItemType.Image => "🖼", // Image
+            ClipboardItemType.FileList => item.Files?.FirstOrDefault()?.IsDirectory == true ? "📁" : "📎",
             _ => "•"
         };
         TimeLabel = item.CreatedAt.ToLocalTime().ToString("HH:mm");

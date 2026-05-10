@@ -159,7 +159,6 @@
                                                        HorizontalAlignment="Center"
                                                        Foreground="{StaticResource AccentBrush}"
                                                        FontSize="16" 
-                                                       FontFamily="Segoe MDL2 Assets"
                                                        Text="{Binding TypeGlyph}" />
                                         </Border>
 
