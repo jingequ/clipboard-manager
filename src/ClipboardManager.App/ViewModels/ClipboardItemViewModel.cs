@@ -23,18 +23,18 @@ public sealed class ClipboardItemViewModel
         Title = (item.Summary ?? string.Empty).ReplaceLineEndings(" ");
         Subtitle = item.Type switch
         {
-            ClipboardItemType.Text => $"{item.TextContent?.Length ?? 0} chars",
-            ClipboardItemType.RichText => $"{item.TextContent?.Length ?? 0} chars",
-            ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} ({FormatSize(imageSize)})" : item.DisplayMetadata ?? "Image",
-            ClipboardItemType.FileList => fileCount > 1 ? $"{fileCount} items" : item.DisplayMetadata ?? "Files",
+            ClipboardItemType.Text => $"{item.TextContent?.Length ?? 0} characters",
+            ClipboardItemType.RichText => "Rich Text Format",
+            ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
+            ClipboardItemType.FileList => fileCount > 1 ? $"{fileCount} items" : item.DisplayMetadata ?? "File",
             _ => string.Empty
         };
         TypeGlyph = item.Type switch
         {
-            ClipboardItemType.Text => "T",
-            ClipboardItemType.RichText => "RT",
-            ClipboardItemType.Image => "🖼",
-            ClipboardItemType.FileList => item.Files?.FirstOrDefault()?.IsDirectory == true ? "📁" : "📎",
+            ClipboardItemType.Text => "\uE7C3", // Text
+            ClipboardItemType.RichText => "\uE179", // RichText
+            ClipboardItemType.Image => "\uEB9F", // Image
+            ClipboardItemType.FileList => item.Files?.FirstOrDefault()?.IsDirectory == true ? "\uE8B7" : "\uE723",
             _ => "•"
         };
         TimeLabel = item.CreatedAt.ToLocalTime().ToString("HH:mm");
@@ -47,8 +47,8 @@ public sealed class ClipboardItemViewModel
         };
         PreviewDetails = item.Type switch
         {
-            ClipboardItemType.Text => $"{(item.TextContent?.Length ?? 0)} chars",
-            ClipboardItemType.RichText => "Rich text clipboard item",
+            ClipboardItemType.Text => $"{(item.TextContent?.Length ?? 0)} characters",
+            ClipboardItemType.RichText => "Formatted Rich Text Content",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount == 0
                 ? "No files"
@@ -57,7 +57,7 @@ public sealed class ClipboardItemViewModel
                     : $"{fileCount} files and folders",
             _ => string.Empty
         };
-        Footer = $"{item.CreatedAt:MM-dd HH:mm}";
+        Footer = item.CreatedAt.ToLocalTime().ToString("MMM dd, HH:mm");
         PreviewImage = TryCreatePreviewImage();
     }
 

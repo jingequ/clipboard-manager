@@ -183,15 +183,11 @@ public partial class MainWindow : Window
                 if (previewImage is not null)
                 {
                     ImagePreviewControl.Source = previewImage;
-                    ImagePreviewControl.Width = previewImage.PixelWidth;
-                    ImagePreviewControl.Height = previewImage.PixelHeight;
                     ImagePreviewBox.Visibility = Visibility.Visible;
                     PreviewFooterText.Text = selectedItem.Footer;
                 }
                 else
                 {
-                    ImagePreviewControl.Width = double.NaN;
-                    ImagePreviewControl.Height = double.NaN;
                     EmptyPreviewText.Text = debugMessage;
                     EmptyPreviewPanel.Visibility = Visibility.Visible;
                 }

@@ -12,6 +12,7 @@ public sealed class ClipboardMonitorService : IClipboardMonitorService, IDisposa
     private readonly Func<bool> _captureFiles;
     private readonly Func<int> _retentionDays;
     private HwndSource? _source;
+    private bool _isPaused;
 
     public ClipboardMonitorService(
         ClipboardSnapshotFactory snapshotFactory,
@@ -60,11 +61,20 @@ public sealed class ClipboardMonitorService : IClipboardMonitorService, IDisposa
 
     public void Dispose() => Stop();
 
+    public void Pause() => _isPaused = true;
+
+    public void Resume() => _isPaused = false;
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_CLIPBOARDUPDATE = 0x031D;
         if (msg == WM_CLIPBOARDUPDATE)
         {
+            if (_isPaused)
+            {
+                return IntPtr.Zero;
+            }
+
             var item = _snapshotFactory.CreateFromCurrentClipboard(_captureImages(), _captureFiles(), _retentionDays());
             if (item is not null)
             {

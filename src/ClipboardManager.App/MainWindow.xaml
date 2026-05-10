@@ -14,12 +14,14 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False">
-    <Border Margin="18"
-            Padding="18"
+    <Border Margin="24"
             Background="{StaticResource PanelBackgroundBrush}"
             BorderBrush="{StaticResource PanelBorderBrush}"
             BorderThickness="1"
             CornerRadius="24">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="40" Direction="270" Opacity="0.4" ShadowDepth="4" Color="Black" />
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -30,29 +32,72 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
-                    Height="56"
+                    Margin="24,24,24,0"
+                    Height="60"
                     Background="{StaticResource SearchBackgroundBrush}"
-                    CornerRadius="14"
+                    CornerRadius="16"
                     BorderBrush="{StaticResource SearchBorderBrush}"
                     BorderThickness="1">
-                <TextBox x:Name="SearchTextBox"
-                         Margin="18,0"
-                         VerticalContentAlignment="Center"
-                         FontSize="20"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         Foreground="{StaticResource PrimaryTextBrush}"
-                         Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" 
+                               Text="&#xE71E;" 
+                               FontFamily="Segoe MDL2 Assets" 
+                               Foreground="{StaticResource MutedTextBrush}" 
+                               VerticalAlignment="Center" 
+                               Margin="18,0,0,0" 
+                               FontSize="18" />
+                    <TextBox x:Name="SearchTextBox"
+                             Grid.Column="1"
+                             Margin="8,0,18,0"
+                             VerticalContentAlignment="Center"
+                             FontSize="18"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Foreground="{StaticResource PrimaryTextBrush}"
+                             Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="TextBox">
+                                            <Grid>
+                                                <TextBlock x:Name="Placeholder" 
+                                                           Text="Search history..." 
+                                                           Foreground="{StaticResource MutedTextBrush}" 
+                                                           VerticalAlignment="Center" 
+                                                           Visibility="Collapsed" />
+                                                <ScrollViewer x:Name="PART_ContentHost" />
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <MultiTrigger>
+                                                    <MultiTrigger.Conditions>
+                                                        <Condition Property="Text" Value="" />
+                                                        <Condition Property="IsFocused" Value="False" />
+                                                    </MultiTrigger.Conditions>
+                                                    <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                                                </MultiTrigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+                </Grid>
             </Border>
 
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="2" Margin="24,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.2*" />
-                    <ColumnDefinition Width="18" />
-                    <ColumnDefinition Width="1*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0" Background="{StaticResource LeftPanelBrush}" CornerRadius="18" Padding="12">
+                <Border Grid.Column="0" Background="Transparent">
                     <Grid>
                         <ListBox x:Name="HistoryListBox"
                                  ItemsSource="{Binding Items}"
@@ -64,36 +109,33 @@
                                  VirtualizingPanel.IsVirtualizing="True"
                                  VirtualizingPanel.VirtualizationMode="Recycling"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.Style>
-                                <Style TargetType="ListBox">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsClearCommandActive}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ListBox.Style>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,0,8" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="Height" Value="64" />
+                                    <Setter Property="Background" Value="Transparent" />
                                     <EventSetter Event="MouseEnter" Handler="HistoryListBoxItem_OnMouseEnter" />
                                     <EventSetter Event="PreviewMouseLeftButtonUp" Handler="HistoryListBoxItem_OnPreviewMouseLeftButtonUp" />
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="ListBoxItem">
-                                                <Border x:Name="Root" Padding="12,10" Background="Transparent" CornerRadius="12">
+                                                <Border x:Name="Root" 
+                                                        Padding="12,8" 
+                                                        Background="{TemplateBinding Background}" 
+                                                        CornerRadius="12"
+                                                        BorderThickness="1"
+                                                        BorderBrush="Transparent">
                                                     <ContentPresenter />
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
                                                         <Setter TargetName="Root" Property="Background" Value="{StaticResource HoverBrush}" />
+                                                        <Setter TargetName="Root" Property="BorderBrush" Value="#15FFFFFF" />
                                                     </Trigger>
                                                     <Trigger Property="IsSelected" Value="True">
-                                                        <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentBrush}" />
+                                                        <Setter TargetName="Root" Property="Background" Value="{StaticResource AccentMutedBrush}" />
+                                                        <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                                                     </Trigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
@@ -103,18 +145,45 @@
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:ClipboardItemViewModel}">
-                                        <Grid Height="44">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="32" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="40" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="18" Text="{Binding TypeGlyph}" />
-                                        <StackPanel Grid.Column="1">
-                                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource PrimaryTextBrush}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Margin="0,4,0,0" Text="{Binding Subtitle}" Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                        
+                                        <Border Grid.Column="0" 
+                                                Width="32" 
+                                                Height="32" 
+                                                Background="{StaticResource AccentMutedBrush}" 
+                                                CornerRadius="8"
+                                                VerticalAlignment="Center">
+                                            <TextBlock VerticalAlignment="Center" 
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       FontSize="16" 
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       Text="{Binding TypeGlyph}" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <TextBlock Text="{Binding Title}" 
+                                                       Foreground="{StaticResource PrimaryTextBrush}" 
+                                                       FontSize="14" 
+                                                       FontWeight="Medium" 
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Margin="0,2,0,0" 
+                                                       Text="{Binding Subtitle}" 
+                                                       Foreground="{StaticResource SecondaryTextBrush}" 
+                                                       FontSize="11" 
+                                                       TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Top" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Text="{Binding TimeLabel}" />
+                                        
+                                        <TextBlock Grid.Column="2" 
+                                                   VerticalAlignment="Center" 
+                                                   Foreground="{StaticResource MutedTextBrush}" 
+                                                   FontSize="11" 
+                                                   Text="{Binding TimeLabel}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -132,10 +201,10 @@
                                 </Style>
                             </StackPanel.Style>
 
-                            <Border Padding="12,10"
+                            <Border Padding="12,8"
                                     Background="{StaticResource AccentBrush}"
                                     CornerRadius="12">
-                                <Grid Height="44">
+                                <Grid Height="36">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="32" />
                                         <ColumnDefinition Width="*" />
@@ -145,10 +214,10 @@
                                                VerticalAlignment="Center"
                                                FontSize="18"
                                                Text="⌫" />
-                                    <StackPanel Grid.Column="1">
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding CommandPreview}"
                                                    Foreground="{StaticResource PrimaryTextBrush}"
-                                                   FontSize="16"
+                                                   FontSize="15"
                                                    FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
@@ -162,10 +231,10 @@
                             </Border>
 
                             <Border Margin="0,8,0,0"
-                                    Padding="12,10"
+                                    Padding="12,8"
                                     Background="Transparent"
                                     CornerRadius="12">
-                                <Grid Height="44">
+                                <Grid Height="36">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="32" />
                                         <ColumnDefinition Width="*" />
@@ -175,16 +244,16 @@
                                                FontSize="18"
                                                Foreground="{StaticResource MutedTextBrush}"
                                                Text="i" />
-                                    <StackPanel Grid.Column="1">
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="Clear Clipboard History"
                                                    Foreground="{StaticResource PrimaryTextBrush}"
-                                                   FontSize="16"
+                                                   FontSize="15"
                                                    FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Margin="0,4,0,0"
+                                        <TextBlock Margin="0,2,0,0"
                                                    Text="{Binding ClearCommandUsage}"
                                                    Foreground="{StaticResource SecondaryTextBrush}"
-                                                   FontSize="12"
+                                                   FontSize="11"
                                                    TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
                                 </Grid>
@@ -193,23 +262,30 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Column="2" Background="{StaticResource RightPanelBrush}" CornerRadius="18" Padding="24">
+                <Border Grid.Column="2" 
+                        Background="{StaticResource RightPanelBrush}" 
+                        CornerRadius="24" 
+                        Padding="24"
+                        BorderBrush="{StaticResource PanelBorderBrush}"
+                        BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid>
-                            <StackPanel x:Name="EmptyPreviewPanel">
-                                <Border Padding="18" CornerRadius="18" Background="{StaticResource PreviewCardBrush}">
-                                    <TextBlock x:Name="EmptyPreviewText"
-                                               Text="Select an item to preview"
-                                               Foreground="{StaticResource SecondaryTextBrush}"
-                                               FontSize="16"
-                                               TextWrapping="Wrap"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
-                                </Border>
+                            <StackPanel x:Name="EmptyPreviewPanel" VerticalAlignment="Center">
+                                <TextBlock Text="" 
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="48"
+                                           HorizontalAlignment="Center"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBlock x:Name="EmptyPreviewText"
+                                           Margin="0,16,0,0"
+                                           Text="Select an item to preview"
+                                           Foreground="{StaticResource SecondaryTextBrush}"
+                                           FontSize="16"
+                                           HorizontalAlignment="Center" />
                             </StackPanel>
 
                             <ScrollViewer x:Name="TextPreviewPanel"
@@ -218,53 +294,69 @@
                                 <TextBlock x:Name="TextPreviewContent"
                                            TextWrapping="Wrap"
                                            Foreground="{StaticResource PrimaryTextBrush}"
-                                           FontSize="16" />
+                                           FontSize="15"
+                                           LineHeight="24" />
                             </ScrollViewer>
 
                             <StackPanel x:Name="FilePreviewPanel"
                                         Visibility="Collapsed"
-                                        VerticalAlignment="Center"
-                                        HorizontalAlignment="Center">
-                                <Image x:Name="FilePreviewIcon" Width="96" Height="96" Stretch="Uniform" HorizontalAlignment="Center" />
+                                        VerticalAlignment="Center">
+                                <Border Background="{StaticResource LeftPanelBrush}" 
+                                        Width="120" 
+                                        Height="120" 
+                                        CornerRadius="24"
+                                        BorderBrush="{StaticResource SearchBorderBrush}"
+                                        BorderThickness="1">
+                                    <Image x:Name="FilePreviewIcon" Width="64" Height="64" Stretch="Uniform" />
+                                </Border>
                                 <TextBlock x:Name="FilePreviewText"
-                                           Margin="0,12,0,0"
-                                           FontSize="16"
+                                           Margin="0,24,0,0"
+                                           FontSize="18"
+                                           FontWeight="Medium"
                                            Foreground="{StaticResource PrimaryTextBrush}"
                                            TextWrapping="Wrap"
                                            TextAlignment="Center" />
                             </StackPanel>
 
-                            <Viewbox x:Name="ImagePreviewBox"
-                                     Visibility="Collapsed"
-                                     Stretch="Uniform"
-                                     StretchDirection="DownOnly">
-                                <Image x:Name="ImagePreviewControl"
-                                       Stretch="None"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       SnapsToDevicePixels="True"
-                                       RenderOptions.BitmapScalingMode="HighQuality" />
-                            </Viewbox>
+                            <Border x:Name="ImagePreviewBox"
+                                    Visibility="Collapsed"
+                                    CornerRadius="16"
+                                    ClipToBounds="True">
+                                <Viewbox StretchDirection="DownOnly" 
+                                         Stretch="Uniform"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center">
+                                    <Image x:Name="ImagePreviewControl" />
+                                </Viewbox>
+                            </Border>
                         </Grid>
-                        <TextBlock x:Name="PreviewFooterText"
-                                   Grid.Row="1"
-                                   Margin="0,24,0,0"
-                                   HorizontalAlignment="Right"
-                                   Foreground="{StaticResource MutedTextBrush}"
-                                   FontSize="14" />
+                        <Border Grid.Row="1" 
+                                Margin="0,24,0,0" 
+                                Padding="12,8" 
+                                Background="{StaticResource LeftPanelBrush}" 
+                                CornerRadius="8"
+                                HorizontalAlignment="Right">
+                            <TextBlock x:Name="PreviewFooterText"
+                                       Foreground="{StaticResource MutedTextBrush}"
+                                       FontSize="12"
+                                       FontWeight="Medium" />
+                        </Border>
                     </Grid>
                 </Border>
             </Grid>
 
-            <Grid Grid.Row="3" Margin="4,16,4,0">
+            <Grid Grid.Row="3" Margin="28,16,28,24">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Foreground="{StaticResource MutedTextBrush}" Text="Enter to copy again • Delete to remove" />
-                <TextBlock Grid.Column="1" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" Text="{Binding StatusMessage}" />
-                <TextBlock Grid.Column="2" HorizontalAlignment="Right" Foreground="{StaticResource MutedTextBrush}" Text="Esc to close" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="12" Text="Copy again  •  " />
+                    <TextBlock Foreground="{StaticResource MutedTextBrush}" FontSize="12" Text="Delete" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" FontSize="12" FontWeight="Medium" Text="{Binding StatusMessage}" />
+                <TextBlock Grid.Column="2" HorizontalAlignment="Right" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Text="Esc to close" />
             </Grid>
         </Grid>
     </Border>

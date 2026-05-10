@@ -48,9 +48,9 @@ public partial class App : System.Windows.Application
         var startupService = new RegistryStartupService(Environment.ProcessPath ?? "ClipboardManager.exe");
         _monitorService = new ClipboardMonitorService(snapshotFactory, () => settings.CaptureImages, () => settings.CaptureFiles, () => settings.RetentionDays);
         _hotkeyService = new GlobalHotkeyService();
-        _pasteAutomationService = new WindowPasteAutomationService();
+        _pasteAutomationService = new WindowPasteAutomationService(logger);
         _trayService = new TrayService();
-        var replayService = new ClipboardReplayService();
+        var replayService = new ClipboardReplayService(logger);
 
         var mainViewModel = new MainWindowViewModel(historyService, replayService, logger);
         var settingsViewModel = new SettingsViewModel(settings, settingsService, startupService);
@@ -65,17 +65,27 @@ public partial class App : System.Windows.Application
         {
             try
             {
-                logger.Info("Confirming clipboard selection.");
-                _monitorService?.Stop();
+                logger.Info("Confirming clipboard selection. Pausing monitor.");
+                _monitorService?.Pause();
                 try
                 {
+                    logger.Info("Calling mainViewModel.ReplaySelectedAsync()");
                     await mainViewModel.ReplaySelectedAsync();
+                    logger.Info("ReplaySelectedAsync() finished. Hiding mainWindow.");
                     mainWindow.Hide();
+                    logger.Info("Calling _pasteAutomationService.PasteToWindowAsync()");
                     await _pasteAutomationService.PasteToWindowAsync(_lastForegroundWindow);
+                    logger.Info("PasteToWindowAsync() finished.");
                 }
                 finally
                 {
-                    _monitorService?.Start();
+                    logger.Info("Scheduling monitor resume in 500ms.");
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(500);
+                        logger.Info("Resuming monitor.");
+                        _monitorService?.Resume();
+                    });
                 }
             }
             catch (Exception ex)
