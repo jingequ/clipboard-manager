@@ -4,15 +4,15 @@
     <!-- Premium Color Palette -->
     <!-- Base Colors (Zinc/Slate inspired) -->
     <Color x:Key="WindowBackgroundColor">#09090B</Color>
-    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#CC121214" Opacity="0.95" />
+    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FA0A0A0C" />
     <SolidColorBrush x:Key="PanelBorderBrush" Color="#22FFFFFF" />
     
-    <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#1AFFFFFF" />
-    <SolidColorBrush x:Key="SearchBorderBrush" Color="#15FFFFFF" />
+    <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#2A2A2E" />
+    <SolidColorBrush x:Key="SearchBorderBrush" Color="#3A3A40" />
     
-    <SolidColorBrush x:Key="LeftPanelBrush" Color="#0DFFFFFF" />
-    <SolidColorBrush x:Key="RightPanelBrush" Color="#08FFFFFF" />
-    <SolidColorBrush x:Key="PreviewCardBrush" Color="#12FFFFFF" />
+    <SolidColorBrush x:Key="LeftPanelBrush" Color="#1A1A1D" />
+    <SolidColorBrush x:Key="RightPanelBrush" Color="#141417" />
+    <SolidColorBrush x:Key="PreviewCardBrush" Color="#1F1F23" />
     
     <!-- Accent Colors -->
     <SolidColorBrush x:Key="AccentBrush" Color="#3ABFF8" />
