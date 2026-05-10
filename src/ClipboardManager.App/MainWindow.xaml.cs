@@ -17,10 +17,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             SearchTextBox.Focus();
-            UpdatePreview();
+            await UpdatePreviewAsync();
         };
         Deactivated += (_, _) =>
         {
@@ -88,14 +88,14 @@ public partial class MainWindow : Window
         SearchTextBox.SelectAll();
     }
 
-    private void HistoryListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void HistoryListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded)
         {
             return;
         }
 
-        UpdatePreview();
+        await UpdatePreviewAsync();
     }
 
     private async void HistoryListBox_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -147,11 +147,17 @@ public partial class MainWindow : Window
         var nextIndex = Math.Clamp(currentIndex + offset, 0, HistoryListBox.Items.Count - 1);
         HistoryListBox.SelectedIndex = nextIndex;
         HistoryListBox.ScrollIntoView(HistoryListBox.SelectedItem);
-        UpdatePreview();
+        _ = UpdatePreviewAsync();
     }
 
-    private void UpdatePreview()
+    private CancellationTokenSource? _previewCts;
+
+    private async Task UpdatePreviewAsync()
     {
+        _previewCts?.Cancel();
+        _previewCts = new CancellationTokenSource();
+        var token = _previewCts.Token;
+
         EmptyPreviewPanel.Visibility = Visibility.Collapsed;
         TextPreviewPanel.Visibility = Visibility.Collapsed;
         ImagePreviewBox.Visibility = Visibility.Collapsed;
@@ -161,45 +167,62 @@ public partial class MainWindow : Window
         TextPreviewContent.Text = string.Empty;
         FilePreviewText.Text = string.Empty;
         PreviewFooterText.Text = string.Empty;
-        EmptyPreviewText.Text = "Select an item to preview";
+        EmptyPreviewText.Text = "Loading preview...";
 
         if (DataContext is not MainWindowViewModel viewModel || viewModel.SelectedItem is not { } selectedItem)
         {
+            EmptyPreviewText.Text = "Select an item to preview";
             EmptyPreviewPanel.Visibility = Visibility.Visible;
             return;
         }
 
         PreviewFooterText.Text = selectedItem.Footer;
 
-        switch (selectedItem.Model.Type)
+        try
         {
-            case ClipboardItemType.Text:
-            case ClipboardItemType.RichText:
-                TextPreviewContent.Text = selectedItem.PreviewText;
-                TextPreviewPanel.Visibility = Visibility.Visible;
-                break;
-            case ClipboardItemType.Image:
-                var previewImage = LoadPreviewImage(selectedItem, out var debugMessage);
-                if (previewImage is not null)
-                {
-                    ImagePreviewControl.Source = previewImage;
-                    ImagePreviewBox.Visibility = Visibility.Visible;
-                    PreviewFooterText.Text = selectedItem.Footer;
-                }
-                else
-                {
-                    EmptyPreviewText.Text = debugMessage;
+            switch (selectedItem.Model.Type)
+            {
+                case ClipboardItemType.Text:
+                case ClipboardItemType.RichText:
+                    TextPreviewContent.Text = selectedItem.PreviewText;
+                    TextPreviewPanel.Visibility = Visibility.Visible;
+                    break;
+                case ClipboardItemType.Image:
+                    var previewImage = await Task.Run(() => LoadPreviewImage(selectedItem, out _), token);
+                    if (token.IsCancellationRequested) return;
+
+                    if (previewImage is not null)
+                    {
+                        ImagePreviewControl.Source = previewImage;
+                        ImagePreviewBox.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        EmptyPreviewText.Text = "Image preview not available";
+                        EmptyPreviewPanel.Visibility = Visibility.Visible;
+                    }
+                    break;
+                case ClipboardItemType.FileList:
+                    var fileIcon = await Task.Run(() => selectedItem.GetPreviewImage(), token);
+                    if (token.IsCancellationRequested) return;
+
+                    FilePreviewIcon.Source = fileIcon;
+                    FilePreviewText.Text = selectedItem.PreviewText;
+                    FilePreviewPanel.Visibility = Visibility.Visible;
+                    break;
+                default:
+                    EmptyPreviewText.Text = "Preview not available";
                     EmptyPreviewPanel.Visibility = Visibility.Visible;
-                }
-                break;
-            case ClipboardItemType.FileList:
-                FilePreviewIcon.Source = selectedItem.PreviewImage;
-                FilePreviewText.Text = selectedItem.PreviewText;
-                FilePreviewPanel.Visibility = Visibility.Visible;
-                break;
-            default:
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            if (!token.IsCancellationRequested)
+            {
+                EmptyPreviewText.Text = "Error loading preview";
                 EmptyPreviewPanel.Visibility = Visibility.Visible;
-                break;
+            }
         }
     }
 

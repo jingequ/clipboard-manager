@@ -69,20 +69,7 @@ public sealed class ClipboardItemViewModel
     public string PreviewDetails { get; }
     public string Footer { get; }
     
-    private BitmapSource? _previewImage;
-    private bool _previewImageLoaded;
-    public BitmapSource? PreviewImage
-    {
-        get
-        {
-            if (!_previewImageLoaded)
-            {
-                _previewImageLoaded = true;
-                _previewImage = TryCreatePreviewImage();
-            }
-            return _previewImage;
-        }
-    }
+
     public Visibility IsTextPreviewVisible => Model.Type is ClipboardItemType.Text or ClipboardItemType.RichText ? Visibility.Visible : Visibility.Collapsed;
     public Visibility IsImagePreviewVisible => Model.Type == ClipboardItemType.Image ? Visibility.Visible : Visibility.Collapsed;
     public Visibility IsFilePreviewVisible => Model.Type == ClipboardItemType.FileList ? Visibility.Visible : Visibility.Collapsed;
@@ -151,7 +138,7 @@ public sealed class ClipboardItemViewModel
         return extension is ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" or ".ico";
     }
 
-    private BitmapSource? TryCreatePreviewImage()
+    public BitmapSource? GetPreviewImage()
     {
         if (Model.Type == ClipboardItemType.Image && !string.IsNullOrWhiteSpace(Model.ImagePath) && File.Exists(Model.ImagePath))
         {
