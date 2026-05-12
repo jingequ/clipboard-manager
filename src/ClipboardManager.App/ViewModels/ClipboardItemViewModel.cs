@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
@@ -20,18 +21,18 @@ public sealed class ClipboardItemViewModel
             ? new FileInfo(item.ImagePath).Length
             : 0;
 
+        var extractedText = ExtractPlainText(item);
         var titleText = item.Summary;
-        if (titleText == "Rich text content" && string.IsNullOrWhiteSpace(item.TextContent))
+        if (string.IsNullOrWhiteSpace(titleText) || titleText == "Rich text content" || titleText.StartsWith("Version:1.0"))
         {
-            titleText = item.HtmlContent ?? item.RtfContent ?? titleText;
-            if (titleText?.Length > 120) titleText = titleText[..117] + "...";
+            titleText = !string.IsNullOrWhiteSpace(extractedText) ? extractedText : "Rich Text Format";
+            if (titleText.Length > 120) titleText = titleText[..117] + "...";
         }
-        Title = (titleText ?? string.Empty).ReplaceLineEndings(" ");
+        Title = titleText.ReplaceLineEndings(" ");
 
-        var textLength = item.TextContent?.Length ?? item.HtmlContent?.Length ?? item.RtfContent?.Length ?? 0;
         Subtitle = item.Type switch
         {
-            ClipboardItemType.Text or ClipboardItemType.RichText => $"{textLength} characters",
+            ClipboardItemType.Text or ClipboardItemType.RichText => $"{extractedText.Length} characters",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount > 1 ? $"{fileCount} items" : item.DisplayMetadata ?? "File",
             _ => string.Empty
@@ -47,14 +48,14 @@ public sealed class ClipboardItemViewModel
         TimeLabel = item.CreatedAt.ToLocalTime().ToString("HH:mm");
         PreviewText = item.Type switch
         {
-            ClipboardItemType.Text => TruncatePreview(item.TextContent),
-            ClipboardItemType.RichText => TruncatePreview(!string.IsNullOrWhiteSpace(item.TextContent) ? item.TextContent : (item.HtmlContent ?? item.RtfContent)),
+            ClipboardItemType.Text => TruncatePreview(extractedText),
+            ClipboardItemType.RichText => TruncatePreview(!string.IsNullOrWhiteSpace(extractedText) ? extractedText : "Rich text format data"),
             ClipboardItemType.FileList => string.Join(Environment.NewLine, item.Files?.Select((file, index) => $"{index + 1}. {file.Path}") ?? []),
             _ => item.DisplayMetadata ?? item.Summary ?? string.Empty
         };
         PreviewDetails = item.Type switch
         {
-            ClipboardItemType.Text or ClipboardItemType.RichText => $"{textLength} characters",
+            ClipboardItemType.Text or ClipboardItemType.RichText => $"{extractedText.Length} characters",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount == 0
                 ? "No files"
@@ -183,6 +184,27 @@ public sealed class ClipboardItemViewModel
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
         return text.Length <= 4000 ? text : text[..4000] + "\n\n... (Content truncated for preview)";
+    }
+
+    private static string ExtractPlainText(ClipboardItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.TextContent))
+        {
+            return item.TextContent;
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.HtmlContent))
+        {
+            var html = item.HtmlContent;
+            var headerEnd = html.IndexOf("<html", StringComparison.OrdinalIgnoreCase);
+            if (headerEnd >= 0) html = html[headerEnd..];
+
+            var text = Regex.Replace(html, "<.*?>", string.Empty);
+            text = text.Replace("&nbsp;", " ").Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&").Replace("&quot;", "\"");
+            return text.Trim();
+        }
+
+        return string.Empty;
     }
 
     private static BitmapSource? LoadBitmapWithoutLock(string path)
