@@ -30,9 +30,12 @@ public sealed class ClipboardItemViewModel
         }
         Title = titleText.ReplaceLineEndings(" ");
 
+        var rawLength = item.HtmlContent?.Length ?? item.RtfContent?.Length ?? item.TextContent?.Length ?? 0;
+
         Subtitle = item.Type switch
         {
-            ClipboardItemType.Text or ClipboardItemType.RichText => $"{extractedText.Length} characters",
+            ClipboardItemType.Text => $"{extractedText.Length} characters",
+            ClipboardItemType.RichText => $"{extractedText.Length} chars (Raw: {rawLength})",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount > 1 ? $"{fileCount} items" : item.DisplayMetadata ?? "File",
             _ => string.Empty
@@ -55,7 +58,8 @@ public sealed class ClipboardItemViewModel
         };
         PreviewDetails = item.Type switch
         {
-            ClipboardItemType.Text or ClipboardItemType.RichText => $"{extractedText.Length} characters",
+            ClipboardItemType.Text => $"{extractedText.Length} characters",
+            ClipboardItemType.RichText => $"{extractedText.Length} chars (Raw: {rawLength})",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount == 0
                 ? "No files"
