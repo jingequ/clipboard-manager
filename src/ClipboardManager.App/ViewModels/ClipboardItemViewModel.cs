@@ -20,11 +20,18 @@ public sealed class ClipboardItemViewModel
             ? new FileInfo(item.ImagePath).Length
             : 0;
 
-        Title = (item.Summary ?? string.Empty).ReplaceLineEndings(" ");
+        var titleText = item.Summary;
+        if (titleText == "Rich text content" && string.IsNullOrWhiteSpace(item.TextContent))
+        {
+            titleText = item.HtmlContent ?? item.RtfContent ?? titleText;
+            if (titleText?.Length > 120) titleText = titleText[..117] + "...";
+        }
+        Title = (titleText ?? string.Empty).ReplaceLineEndings(" ");
+
+        var textLength = item.TextContent?.Length ?? item.HtmlContent?.Length ?? item.RtfContent?.Length ?? 0;
         Subtitle = item.Type switch
         {
-            ClipboardItemType.Text => $"{item.TextContent?.Length ?? 0} characters",
-            ClipboardItemType.RichText => "Rich Text Format",
+            ClipboardItemType.Text or ClipboardItemType.RichText => $"{textLength} characters",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount > 1 ? $"{fileCount} items" : item.DisplayMetadata ?? "File",
             _ => string.Empty
@@ -41,14 +48,13 @@ public sealed class ClipboardItemViewModel
         PreviewText = item.Type switch
         {
             ClipboardItemType.Text => TruncatePreview(item.TextContent),
-            ClipboardItemType.RichText => TruncatePreview(item.TextContent),
+            ClipboardItemType.RichText => TruncatePreview(!string.IsNullOrWhiteSpace(item.TextContent) ? item.TextContent : (item.HtmlContent ?? item.RtfContent)),
             ClipboardItemType.FileList => string.Join(Environment.NewLine, item.Files?.Select((file, index) => $"{index + 1}. {file.Path}") ?? []),
             _ => item.DisplayMetadata ?? item.Summary ?? string.Empty
         };
         PreviewDetails = item.Type switch
         {
-            ClipboardItemType.Text => $"{(item.TextContent?.Length ?? 0)} characters",
-            ClipboardItemType.RichText => "Formatted Rich Text Content",
+            ClipboardItemType.Text or ClipboardItemType.RichText => $"{textLength} characters",
             ClipboardItemType.Image => imageSize > 0 ? $"{item.DisplayMetadata} • {FormatSize(imageSize)}" : item.DisplayMetadata ?? "Image",
             ClipboardItemType.FileList => fileCount == 0
                 ? "No files"
