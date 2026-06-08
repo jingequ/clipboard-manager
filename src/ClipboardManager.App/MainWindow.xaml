@@ -19,6 +19,9 @@
             BorderBrush="{StaticResource PanelBorderBrush}"
             BorderThickness="1"
             CornerRadius="24">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="25" ShadowDepth="4" Color="Black" Opacity="0.15" Direction="270" />
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -109,7 +112,7 @@
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="Margin" Value="0,0,0,4" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="Background" Value="Transparent" />
                                     <EventSetter Event="MouseEnter" Handler="HistoryListBoxItem_OnMouseEnter" />
@@ -118,7 +121,7 @@
                                         <Setter.Value>
                                             <ControlTemplate TargetType="ListBoxItem">
                                                 <Border x:Name="Root" 
-                                                        Padding="12,8" 
+                                                        Padding="12,5" 
                                                         Background="{TemplateBinding Background}" 
                                                         CornerRadius="12"
                                                         BorderThickness="1"

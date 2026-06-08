@@ -88,6 +88,24 @@ public sealed class SqliteClipboardHistoryService : IClipboardHistoryService
         return items;
     }
 
+    public async Task<int> GetTotalCountAsync(string query, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM clipboard_items
+            WHERE (@query = '' OR summary LIKE @pattern OR search_text LIKE @pattern);
+            """;
+        command.Parameters.AddWithValue("@query", query ?? string.Empty);
+        command.Parameters.AddWithValue("@pattern", $"%{query}%");
+
+        var count = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(count);
+    }
+
     public async Task AddOrUpdateAsync(ClipboardItem item, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
@@ -174,6 +192,81 @@ public sealed class SqliteClipboardHistoryService : IClipboardHistoryService
         var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM clipboard_items WHERE datetime(created_at) >= datetime(@since)";
         command.Parameters.AddWithValue("@since", since.ToString("O"));
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+        DeleteFiles(imagePaths);
+        return deleted;
+    }
+
+    public async Task<int> DeleteLatestAsync(int count, CancellationToken cancellationToken = default)
+    {
+        if (count == 0)
+        {
+            return 0;
+        }
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        string sqlQuery;
+        string sqlDelete;
+        int limitValue;
+
+        if (count > 0)
+        {
+            limitValue = count;
+            sqlQuery = """
+                SELECT image_path
+                FROM clipboard_items
+                WHERE id IN (
+                    SELECT id
+                    FROM clipboard_items
+                    ORDER BY datetime(created_at) DESC
+                    LIMIT @limit
+                );
+                """;
+            sqlDelete = """
+                DELETE FROM clipboard_items
+                WHERE id IN (
+                    SELECT id
+                    FROM clipboard_items
+                    ORDER BY datetime(created_at) DESC
+                    LIMIT @limit
+                );
+                """;
+        }
+        else
+        {
+            limitValue = -count;
+            sqlQuery = """
+                SELECT image_path
+                FROM clipboard_items
+                WHERE id IN (
+                    SELECT id
+                    FROM clipboard_items
+                    ORDER BY datetime(created_at) ASC
+                    LIMIT @limit
+                );
+                """;
+            sqlDelete = """
+                DELETE FROM clipboard_items
+                WHERE id IN (
+                    SELECT id
+                    FROM clipboard_items
+                    ORDER BY datetime(created_at) ASC
+                    LIMIT @limit
+                );
+                """;
+        }
+
+        var imagePaths = await QueryImagePathsAsync(
+            connection,
+            sqlQuery,
+            ("@limit", limitValue),
+            cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = sqlDelete;
+        command.Parameters.AddWithValue("@limit", limitValue);
         var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
         DeleteFiles(imagePaths);
         return deleted;

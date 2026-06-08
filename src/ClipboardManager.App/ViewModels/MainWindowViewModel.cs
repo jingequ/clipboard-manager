@@ -46,7 +46,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         private set => SetProperty(ref _commandPreview, value);
     }
 
-    public string ClearCommandUsage => "clear 删除全部，clear 5 删除5分钟内记录，clear 1d 删除1天内记录";
+    public string ClearCommandUsage => "clear 删除全部，clear n (n>0 删除前n条，n<0 删除后n条，0不删)，clear 1d 删除1天内记录";
 
     public bool HasCommandPreview => !string.IsNullOrWhiteSpace(CommandPreview);
 
@@ -106,6 +106,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return searchResults.Select(result => new ClipboardItemViewModel(result)).ToList();
             }, cancellationToken);
 
+            var totalCount = await Task.Run(async () =>
+            {
+                return await _historyService.GetTotalCountAsync(SearchQuery, cancellationToken);
+            }, cancellationToken);
+
             if (cancellationToken.IsCancellationRequested) return;
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
@@ -117,7 +122,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 }
 
                 SelectedItem = Items.FirstOrDefault();
-                StatusMessage = Items.Count == 0 ? "No clipboard items yet" : $"{Items.Count} items";
+                StatusMessage = totalCount == 0 ? "No clipboard items yet" : $"{totalCount} items";
             });
         }
         catch (TaskCanceledException)
@@ -187,10 +192,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             ClearCommandMode.All => await ExecuteDeleteAllAsync(),
             ClearCommandMode.Recent => await _historyService.DeleteRecentAsync(DateTimeOffset.Now - _clearCommandInfo.Duration),
+            ClearCommandMode.Count => await _historyService.DeleteLatestAsync(_clearCommandInfo.Count),
             _ => 0
         };
 
-        await RefreshAsync();
+        SearchQuery = string.Empty;
         return true;
     }
 
@@ -236,9 +242,20 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var arg = trimmed["clear ".Length..].Trim();
-        if (int.TryParse(arg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) && minutes > 0)
+        if (int.TryParse(arg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count))
         {
-            return new ClearCommandInfo(ClearCommandMode.Recent, TimeSpan.FromMinutes(minutes), $"删除{minutes}分钟内记录");
+            if (count > 0)
+            {
+                return new ClearCommandInfo(ClearCommandMode.Count, TimeSpan.Zero, $"删除前 {count} 条记录", count);
+            }
+            else if (count < 0)
+            {
+                return new ClearCommandInfo(ClearCommandMode.Count, TimeSpan.Zero, $"删除后 {-count} 条记录", count);
+            }
+            else // count == 0
+            {
+                return new ClearCommandInfo(ClearCommandMode.Count, TimeSpan.Zero, "不删除记录", 0);
+            }
         }
 
         if (arg.EndsWith("d", StringComparison.OrdinalIgnoreCase) &&
@@ -264,12 +281,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private sealed record ClearCommandInfo(ClearCommandMode Mode, TimeSpan Duration, string Description);
+    private sealed record ClearCommandInfo(ClearCommandMode Mode, TimeSpan Duration, string Description, int Count = 0);
 
     private enum ClearCommandMode
     {
         Invalid,
         All,
-        Recent
+        Recent,
+        Count
     }
 }

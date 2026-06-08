@@ -46,6 +46,17 @@ public partial class App : System.Windows.Application
         settings.RetentionDays = Math.Max(0, settings.RetentionDays);
         var snapshotFactory = new ClipboardSnapshotFactory(Path.Combine(_appDataDirectory, "images"));
         var startupService = new RegistryStartupService(Environment.ProcessPath ?? "ClipboardManager.exe");
+        if (settings.LaunchAtStartup)
+        {
+            try
+            {
+                startupService.SetEnabled(true);
+            }
+            catch (Exception ex)
+            {
+                logger.Error("Failed to update registry startup path.", ex);
+            }
+        }
         _monitorService = new ClipboardMonitorService(snapshotFactory, () => settings.CaptureImages, () => settings.CaptureFiles, () => settings.RetentionDays);
         _hotkeyService = new GlobalHotkeyService();
         _pasteAutomationService = new WindowPasteAutomationService(logger);

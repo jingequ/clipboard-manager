@@ -15,7 +15,7 @@ A lightweight Windows clipboard history manager built with `.NET 8 + WPF`.
 - Keyboard and hover-driven selection
 - `clear` command support from the search box:
   - `clear`
-  - `clear 5`
+  - `clear 5` (deletes front/newest 5 items, negative deletes back/oldest items)
   - `clear 1d`
 - Local SQLite storage
 - Image cache cleanup
@@ -107,7 +107,7 @@ Note:
 - Pasted items are moved to the top of the history list
 - Search supports clear commands:
   - `clear` deletes all history
-  - `clear 5` deletes the last 5 minutes
+  - `clear 5` deletes the front/newest 5 items (negative `n` deletes back/oldest `n` items)
   - `clear 1d` deletes the last 24 hours
   - `clear 2d` deletes the last 2 days
 
@@ -120,7 +120,7 @@ Note:
 5. Copy text, rich text, images, files, or folders as usual. They will appear in the history list automatically.
 6. Select a record and press `Enter` to copy it again and paste it into the active window.
 7. Press `Delete` to remove the selected history record.
-8. Use the search box to search history, or enter commands such as `clear`, `clear 5`, or `clear 1d`.
+8. Use the search box to search history, or enter commands such as `clear`, `clear 5` (deletes front 5 items, negative deletes back items), or `clear 1d`.
 9. Right-click the tray icon for quick actions like open, settings, clear history, and exit.
 
 Data is stored under:

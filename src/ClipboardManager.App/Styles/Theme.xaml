@@ -3,26 +3,26 @@
     
     <!-- Premium Color Palette -->
     <!-- Base Colors (Zinc/Slate inspired) -->
-    <Color x:Key="WindowBackgroundColor">#09090B</Color>
-    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FA0A0A0C" />
-    <SolidColorBrush x:Key="PanelBorderBrush" Color="#22FFFFFF" />
+    <Color x:Key="WindowBackgroundColor">#FAFAFA</Color>
+    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PanelBorderBrush" Color="#E4E4E7" />
     
-    <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#2A2A2E" />
-    <SolidColorBrush x:Key="SearchBorderBrush" Color="#3A3A40" />
+    <SolidColorBrush x:Key="SearchBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="SearchBorderBrush" Color="#E4E4E7" />
     
-    <SolidColorBrush x:Key="LeftPanelBrush" Color="#1A1A1D" />
-    <SolidColorBrush x:Key="RightPanelBrush" Color="#141417" />
-    <SolidColorBrush x:Key="PreviewCardBrush" Color="#1F1F23" />
+    <SolidColorBrush x:Key="LeftPanelBrush" Color="#F4F4F5" />
+    <SolidColorBrush x:Key="RightPanelBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PreviewCardBrush" Color="#F4F4F5" />
     
     <!-- Accent Colors -->
-    <SolidColorBrush x:Key="AccentBrush" Color="#3ABFF8" />
-    <SolidColorBrush x:Key="AccentMutedBrush" Color="#203ABFF8" />
-    <SolidColorBrush x:Key="HoverBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#4F46E5" />
+    <SolidColorBrush x:Key="AccentMutedBrush" Color="#154F46E5" />
+    <SolidColorBrush x:Key="HoverBrush" Color="#08000000" />
     
     <!-- Text Colors -->
-    <SolidColorBrush x:Key="PrimaryTextBrush" Color="#FAFAFA" />
-    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#A1A1AA" />
-    <SolidColorBrush x:Key="MutedTextBrush" Color="#71717A" />
+    <SolidColorBrush x:Key="PrimaryTextBrush" Color="#18181B" />
+    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#52525B" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="#A1A1AA" />
     
     <!-- Typography -->
     <FontFamily x:Key="MainFontFamily">Inter, Segoe UI, Microsoft YaHei</FontFamily>
@@ -56,17 +56,17 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Thumb}">
                     <Border x:Name="rectangle"
-                            Background="#33FFFFFF"
+                            Background="#22000000"
                             CornerRadius="3"
                             Height="{TemplateBinding Height}"
                             SnapsToDevicePixels="True"
                             Width="{TemplateBinding Width}" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="true">
-                            <Setter TargetName="rectangle" Property="Background" Value="#4DFFFFFF" />
+                            <Setter TargetName="rectangle" Property="Background" Value="#44000000" />
                         </Trigger>
                         <Trigger Property="IsDragging" Value="true">
-                            <Setter TargetName="rectangle" Property="Background" Value="#66FFFFFF" />
+                            <Setter TargetName="rectangle" Property="Background" Value="#66000000" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
