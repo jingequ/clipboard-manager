@@ -89,6 +89,7 @@ pub fn get_clipboard_custom_format(format_name: &str) -> Option<String> {
 pub fn get_clipboard_files() -> Option<Vec<String>> {
     unsafe {
         if !OpenClipboard(None).is_ok() {
+            println!("[ClipService] get_clipboard_files: OpenClipboard failed");
             return None;
         }
         let mut files = None;
@@ -96,6 +97,7 @@ pub fn get_clipboard_files() -> Option<Vec<String>> {
             if let Ok(handle) = GetClipboardData(15) {
                 let hdrop = HDROP(handle.0);
                 let count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
+                println!("[ClipService] CF_HDROP found, file count: {}", count);
                 let mut paths = Vec::new();
                 for i in 0..count {
                     let len = DragQueryFileW(hdrop, i, None);
@@ -105,7 +107,11 @@ pub fn get_clipboard_files() -> Option<Vec<String>> {
                     paths.push(path);
                 }
                 files = Some(paths);
+            } else {
+                println!("[ClipService] CF_HDROP available but GetClipboardData failed");
             }
+        } else {
+            println!("[ClipService] CF_HDROP not available on clipboard");
         }
         let _ = CloseClipboard();
         files

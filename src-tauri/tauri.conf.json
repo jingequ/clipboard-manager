@@ -14,18 +14,26 @@
       {
         "label": "main",
         "title": "Clipboard Manager",
-        "width": 1120,
-        "height": 700,
+        "width": 900,
+        "height": 600,
         "decorations": false,
         "transparent": true,
         "resizable": false,
         "visible": false,
         "alwaysOnTop": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "shadow": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$LOCALDATA/ClipboardManager/images/**",
+          "$APPDATA/images/**"
+        ]
+      }
     }
   },
   "bundle": {

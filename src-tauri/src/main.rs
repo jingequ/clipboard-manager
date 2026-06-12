@@ -146,7 +146,7 @@ fn clean_orphaned_image_cache(db_path: &str, image_dir: &str) {
 }
 
 // Global hotkey message loop
-fn start_hotkey_manager(app_handle: AppHandle) -> std::sync::mpsc::Sender<String> {
+fn start_hotkey_manager(app_handle: AppHandle, initial_gesture: String) -> std::sync::mpsc::Sender<String> {
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     
     std::thread::spawn(move || {
@@ -154,52 +154,77 @@ fn start_hotkey_manager(app_handle: AppHandle) -> std::sync::mpsc::Sender<String
         let mut current_mods = 0u32;
         let mut current_key = 0u32;
         
-        // Register default Alt+C (0x43)
-        unsafe {
-            let _ = RegisterHotKey(None, registered_id, MOD_ALT | MOD_NOREPEAT, 0x43);
-            current_mods = (MOD_ALT | MOD_NOREPEAT).0;
-            current_key = 0x43;
+        // Register initial hotkey
+        if let Some((mods, key)) = parse_hotkey_string(&initial_gesture) {
+            unsafe {
+                if let Err(e) = RegisterHotKey(None, registered_id, windows::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS(mods), key) {
+                    eprintln!("Failed to register initial hotkey '{}': {:?}", initial_gesture, e);
+                } else {
+                    println!("Successfully registered initial hotkey '{}'", initial_gesture);
+                    current_mods = mods;
+                    current_key = key;
+                }
+            }
+        } else {
+            eprintln!("Invalid initial hotkey gesture '{}'", initial_gesture);
         }
 
-        // We run a loop that polls both window messages and channel updates
-        // To combine window message loop with MPSC receiver, we use a message timeout or direct posting.
-        // Actually, we can run a window message loop in this thread, and let a separate thread listen to the channel
-        // and post a WM_USER message to this thread to update the hotkeys! This is a classic clean Win32 solution.
+        // Spawn thread to listen for updates
         let thread_id = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
-        
         std::thread::spawn(move || {
             while let Ok(gesture) = rx.recv() {
-                // Post WM_USER + 1 to the hotkey loop thread
                 unsafe {
-                    // Lock ptr or allocate to pass it safely (since it's inside same process, we can pass it as LPARAM)
                     let boxed = Box::new(gesture);
                     let lparam = Box::into_raw(boxed) as isize;
-                    let _ = windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW(thread_id, 0x0400 + 1, windows::Win32::Foundation::WPARAM(0), windows::Win32::Foundation::LPARAM(lparam));
+                    // Retrying PostThreadMessageW a few times if it fails
+                    let mut success = false;
+                    for _ in 0..10 {
+                        if windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
+                            thread_id,
+                            0x0400 + 1,
+                            windows::Win32::Foundation::WPARAM(0),
+                            windows::Win32::Foundation::LPARAM(lparam)
+                        ).is_ok() {
+                            success = true;
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    if !success {
+                        eprintln!("Failed to post hotkey update message to message loop thread.");
+                        // Reclaim memory to avoid leak
+                        let _ = Box::from_raw(lparam as *mut String);
+                    }
                 }
             }
         });
 
+        // Run message loop
         unsafe {
+            // Force creation of message queue for this thread
             let mut msg = MSG::default();
+            let _ = windows::Win32::UI::WindowsAndMessaging::PeekMessageW(&mut msg, None, 0, 0, windows::Win32::UI::WindowsAndMessaging::PM_NOREMOVE);
+            
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == registered_id {
-                    // Hotkey triggered!
+                    println!("Hotkey triggered!");
                     if let Some(window) = app_handle.get_webview_window("main") {
                         show_window(&window);
                     }
                 } else if msg.message == 0x0400 + 1 {
-                    // Update hotkey gesture!
                     let raw_ptr = msg.lParam.0 as *mut String;
                     if !raw_ptr.is_null() {
                         let gesture = Box::from_raw(raw_ptr);
+                        println!("Updating hotkey to: {}", gesture);
                         if let Some((mods, key)) = parse_hotkey_string(&gesture) {
                             let _ = UnregisterHotKey(None, registered_id);
                             registered_id += 1;
                             if RegisterHotKey(None, registered_id, windows::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS(mods), key).is_ok() {
+                                println!("Successfully updated hotkey to '{}'", gesture);
                                 current_mods = mods;
                                 current_key = key;
                             } else {
-                                // Re-register previous if failed
+                                eprintln!("Failed to update hotkey to '{}', reverting to previous", gesture);
                                 let _ = RegisterHotKey(None, registered_id, windows::Win32::UI::Input::KeyboardAndMouse::HOT_KEY_MODIFIERS(current_mods), current_key);
                             }
                         }
@@ -277,9 +302,15 @@ fn save_settings(settings: AppSettings, _app_handle: AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
-fn search_history(query: String, limit: i32) -> Result<Vec<database::ClipboardItem>, String> {
+fn search_history(query: String, limit: i32) -> Result<Vec<database::ClipboardItemSummary>, String> {
     let db = DB_PATH.lock().unwrap().clone();
-    database::search_items(&db, &query, limit).map_err(|e| e.to_string())
+    database::search_summaries(&db, &query, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_item_details(id: String) -> Result<Option<database::ClipboardItem>, String> {
+    let db = DB_PATH.lock().unwrap().clone();
+    database::get_item_preview(&db, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -347,9 +378,7 @@ fn replay_and_paste(id: String, app_handle: AppHandle) -> Result<(), String> {
     *MONITOR_PAUSED.lock().unwrap() = true;
     
     let db = DB_PATH.lock().unwrap().clone();
-    let items = database::search_items(&db, "", 100).map_err(|e| e.to_string())?;
-    
-    let matched_item = items.into_iter().find(|x| x.id == id);
+    let matched_item = database::get_item_by_id(&db, &id).map_err(|e| e.to_string())?;
     if let Some(item) = matched_item {
         let success = match item.item_type {
             database::ClipboardItemType::Text => {
@@ -414,6 +443,7 @@ fn replay_and_paste(id: String, app_handle: AppHandle) -> Result<(), String> {
 }
 
 fn show_window(window: &WebviewWindow) {
+    println!("show_window called for window label: {}", window.label());
     unsafe {
         let fg_hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
         let current_hwnd = window.hwnd().unwrap_or(HWND(std::ptr::null_mut()));
@@ -421,26 +451,62 @@ fn show_window(window: &WebviewWindow) {
             *LAST_FOREGROUND_WINDOW.lock().unwrap() = Some(fg_hwnd.0 as isize);
         }
     }
-    let _ = window.show();
-    let _ = window.center();
-    let _ = window.set_focus();
+    if let Err(e) = window.unminimize() {
+        eprintln!("Failed to unminimize window: {:?}", e);
+    }
+    if let Err(e) = window.show() {
+        eprintln!("Failed to show window: {:?}", e);
+    }
+    if let Err(e) = window.center() {
+        eprintln!("Failed to center window: {:?}", e);
+    }
+    if let Err(e) = window.set_focus() {
+        eprintln!("Failed to focus window: {:?}", e);
+    }
+    
+    if let Ok(pos) = window.outer_position() {
+        println!("Window position: {:?}", pos);
+    }
+    if let Ok(size) = window.outer_size() {
+        println!("Window size: {:?}", size);
+    }
+    if let Ok(visible) = window.is_visible() {
+        println!("Window visibility state: {:?}", visible);
+    }
+    
     let _ = window.emit("window-shown", ());
+}
+
+#[tauri::command]
+fn log_from_js(msg: String) {
+    println!("[JS LOG] {}", msg);
+}
+
+#[tauri::command]
+fn hide_window(app_handle: AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.hide();
+    }
 }
 
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            println!("Starting setup hook...");
             let app_data = Path::new(&std::env::var("LOCALAPPDATA").unwrap()).join("ClipboardManager");
             std::fs::create_dir_all(&app_data).unwrap();
 
             let db_path = app_data.join("clipboard.db").to_string_lossy().into_owned();
             let image_dir = app_data.join("images").to_string_lossy().into_owned();
             let settings_path = app_data.join("settings.json").to_string_lossy().into_owned();
+            println!("Data paths: DB='{}', Settings='{}'", db_path, settings_path);
 
             std::fs::create_dir_all(&image_dir).unwrap();
 
             // Initialize DB
+            println!("Initializing database...");
             database::initialize(&db_path).unwrap();
+            println!("Database initialized.");
 
             // Load settings
             let settings = load_settings_or_default(&settings_path);
@@ -452,31 +518,37 @@ fn main() {
             *CURRENT_SETTINGS.lock().unwrap() = Some(settings.clone());
 
             // Build Tray Menu
+            println!("Building tray menu...");
             let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let clear_item = MenuItem::with_id(app, "clear", "Clear History", true, None::<&str>)?;
             let exit_item = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&open_item, &settings_item, &clear_item, &tauri::menu::PredefinedMenuItem::separator(app)?, &exit_item])?;
 
-            let _tray = TrayIconBuilder::new()
+            println!("Building tray icon...");
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            println!("Tray left-clicked, showing window");
                             show_window(&window);
                         }
                     }
                 })
                 .build(app)?;
+            app.manage(tray);
+            println!("Tray icon registered and state managed.");
 
             // Start Hotkey message loop
-            let hotkey_tx = start_hotkey_manager(app.handle().clone());
-            let _ = hotkey_tx.send(settings.hotkey_gesture);
+            println!("Starting hotkey manager...");
+            let hotkey_tx = start_hotkey_manager(app.handle().clone(), settings.hotkey_gesture.clone());
             *HOTKEY_THREAD_SENDER.lock().unwrap() = Some(hotkey_tx);
 
             // Listen to tray menu click events
             app.on_menu_event(move |app, event| {
+                println!("Tray menu event triggered: {:?}", event.id);
                 match event.id.as_ref() {
                     "open" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -485,6 +557,9 @@ fn main() {
                     }
                     "settings" => {
                         let _ = app.emit("open-settings", ());
+                        if let Some(window) = app.get_webview_window("main") {
+                            show_window(&window);
+                        }
                     }
                     "clear" => {
                         let db = DB_PATH.lock().unwrap().clone();
@@ -501,6 +576,7 @@ fn main() {
             });
 
             // Start Clipboard monitor thread
+            println!("Starting clipboard monitor thread...");
             let db_path_clone = db_path.clone();
             let image_dir_clone = image_dir.clone();
             let app_handle_clone = app.handle().clone();
@@ -511,39 +587,43 @@ fn main() {
                     app_handle: app_handle_clone,
                 };
                 if let Ok(mut master) = Master::new(handler) {
+                    println!("Clipboard master running.");
                     let _ = master.run();
+                } else {
+                    eprintln!("Failed to initialize clipboard master.");
                 }
             });
 
             // Setup main window lose focus event
             if let Some(window) = app.get_webview_window("main") {
-                #[cfg(debug_assertions)]
-                {
-                    show_window(&window);
-                }
-
-                #[cfg(not(debug_assertions))]
-                {
-                    let window_clone = window.clone();
-                    window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Focused(false) = event {
-                            let _ = window_clone.hide();
-                        }
-                    });
-                }
+                println!("Main window found.");
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    println!("[Rust] Window event: {:?}", event);
+                    if let tauri::WindowEvent::Focused(false) = event {
+                        println!("[Rust] Window lost focus, hiding main window!");
+                        let _ = window_clone.hide();
+                    }
+                });
+            } else {
+                eprintln!("Main window NOT found in setup!");
             }
 
+            println!("Setup hook finished successfully.");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
             search_history,
+            get_item_details,
             get_total_count_cmd,
             delete_history_item,
             clear_history,
             execute_clear_command_cmd,
-            replay_and_paste
+            replay_and_paste,
+            log_from_js,
+            hide_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -553,7 +633,22 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
     let settings = CURRENT_SETTINGS.lock().unwrap().clone()?;
     
     if settings.capture_files {
-        if let Some(files) = clipboard_service::get_clipboard_files() {
+        println!("[Capture] Checking for files on clipboard...");
+        // Retry a few times since the clipboard might still be locked by the source app
+        let mut files_result = None;
+        for attempt in 0..3 {
+            files_result = clipboard_service::get_clipboard_files();
+            if files_result.is_some() {
+                break;
+            }
+            if attempt < 2 {
+                println!("[Capture] get_clipboard_files returned None (attempt {}), retrying...", attempt + 1);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+        
+        if let Some(files) = files_result {
+            println!("[Capture] Found {} file(s) on clipboard", files.len());
             if !files.is_empty() {
                 let mut entries = Vec::new();
                 for f in &files {
@@ -588,6 +683,7 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                 let hash = compute_sha256(&paths_str);
                 
                 if let Ok(Some(existing)) = database::find_existing_by_hash(db_path, &hash) {
+                    println!("[Capture] File(s) already exist in DB, touching item");
                     let now = chrono::Local::now().to_rfc3339();
                     let _ = database::touch_item(db_path, &existing.id, &now);
                     return None;
@@ -621,6 +717,7 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                     display_metadata: Some(display_metadata),
                 };
                 
+                println!("[Capture] Saving file clipboard item: {}", item.summary);
                 let _ = database::add_or_update_item(db_path, &item);
                 return Some(item);
             }
@@ -709,7 +806,7 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                 item_type: database::ClipboardItemType::RichText,
                 summary,
                 search_text: text_val.clone(),
-                text_content: Some(text_val),
+                text_content: Some(text_val.clone()),
                 html_content: html,
                 rtf_content: rtf,
                 image_path: None,
@@ -717,15 +814,15 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                 created_at: chrono::Local::now().to_rfc3339(),
                 expires_at,
                 content_hash: Some(hash),
-                display_metadata: Some("Rich text".to_string()),
+                display_metadata: Some(format!("{} chars", text_val.chars().count())),
             };
             
             let _ = database::add_or_update_item(db_path, &item);
             return Some(item);
         }
-    }
-    
-    if let Some(text_val) = text {
+     }
+     
+     if let Some(text_val) = text {
         if !text_val.trim().is_empty() {
             let hash = compute_sha256(&text_val);
             
@@ -752,7 +849,7 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                 item_type: database::ClipboardItemType::Text,
                 summary,
                 search_text: text_val.clone(),
-                text_content: Some(text_val),
+                text_content: Some(text_val.clone()),
                 html_content: None,
                 rtf_content: None,
                 image_path: None,
@@ -760,7 +857,7 @@ fn capture_current_clipboard(db_path: &str, image_dir: &str) -> Option<database:
                 created_at: chrono::Local::now().to_rfc3339(),
                 expires_at,
                 content_hash: Some(hash),
-                display_metadata: None,
+                display_metadata: Some(format!("{} chars", text_val.chars().count())),
             };
             
             let _ = database::add_or_update_item(db_path, &item);

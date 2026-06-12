@@ -1,26 +1,45 @@
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardItemType {
-    Text = 0,
-    Image = 1,
-    FileList = 2,
-    RichText = 3,
+    Text = 1,
+    Image = 2,
+    FileList = 3,
+    RichText = 4,
 }
 
 impl ClipboardItemType {
     pub fn from_i32(val: i32) -> Self {
         match val {
-            1 => ClipboardItemType::Image,
-            2 => ClipboardItemType::FileList,
-            3 => ClipboardItemType::RichText,
+            2 => ClipboardItemType::Image,
+            3 => ClipboardItemType::FileList,
+            4 => ClipboardItemType::RichText,
             _ => ClipboardItemType::Text,
         }
     }
 
     pub fn to_i32(&self) -> i32 {
         *self as i32
+    }
+}
+
+impl serde::Serialize for ClipboardItemType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_i32(*self as i32)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ClipboardItemType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = i32::deserialize(deserializer)?;
+        Ok(ClipboardItemType::from_i32(val))
     }
 }
 
@@ -60,8 +79,22 @@ pub struct ClipboardItem {
     pub display_metadata: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ClipboardItemSummary {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub item_type: ClipboardItemType,
+    pub summary: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "displayMetadata")]
+    pub display_metadata: Option<String>,
+}
+
 pub fn initialize(db_path: &str) -> Result<()> {
     let conn = Connection::open(db_path)?;
+    let _ = conn.execute("PRAGMA journal_mode = WAL;", []);
+    let _ = conn.execute("PRAGMA synchronous = NORMAL;", []);
     conn.execute(
         "CREATE TABLE IF NOT EXISTS clipboard_items (
             id TEXT PRIMARY KEY,
@@ -91,16 +124,29 @@ pub fn initialize(db_path: &str) -> Result<()> {
         [],
     )?;
 
+    // Database Migration: align old Rust type mapping values with C# WPF schema values
+    let _ = conn.execute("UPDATE clipboard_items SET type = 1 WHERE type = 0;", []);
+    let _ = conn.execute("UPDATE clipboard_items SET type = 2 WHERE type = 1 AND image_path IS NOT NULL;", []);
+    let _ = conn.execute("UPDATE clipboard_items SET type = 3 WHERE type = 2 AND file_list_json IS NOT NULL;", []);
+    let _ = conn.execute("UPDATE clipboard_items SET type = 4 WHERE type = 3 AND (html_content IS NOT NULL OR rtf_content IS NOT NULL);", []);
+    let _ = conn.execute(
+        "UPDATE clipboard_items 
+         SET display_metadata = LENGTH(text_content) || ' chars' 
+         WHERE type IN (1, 4) AND (display_metadata IS NULL OR display_metadata = 'Rich text' OR display_metadata = '');", 
+        []
+    );
+
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn search_items(db_path: &str, query: &str, limit: i32) -> Result<Vec<ClipboardItem>> {
     let conn = Connection::open(db_path)?;
     let mut stmt = conn.prepare(
         "SELECT id, type, summary, search_text, text_content, html_content, rtf_content, image_path, file_list_json, created_at, expires_at, content_hash, display_metadata
          FROM clipboard_items
          WHERE (?1 = '' OR summary LIKE ?2 OR search_text LIKE ?2)
-         ORDER BY datetime(created_at) DESC
+         ORDER BY created_at DESC
          LIMIT ?3;"
     )?;
 
@@ -134,6 +180,193 @@ pub fn search_items(db_path: &str, query: &str, limit: i32) -> Result<Vec<Clipbo
         }
     }
     Ok(items)
+}
+
+pub fn search_summaries(db_path: &str, query: &str, limit: i32) -> Result<Vec<ClipboardItemSummary>> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, type, summary, created_at, display_metadata
+         FROM clipboard_items
+         WHERE (?1 = '' OR summary LIKE ?2 OR search_text LIKE ?2)
+         ORDER BY created_at DESC
+         LIMIT ?3;"
+    )?;
+
+    let pattern = format!("%{}%", query);
+    let rows = stmt.query_map(params![query, pattern, limit], |row| {
+        Ok(ClipboardItemSummary {
+            id: row.get(0)?,
+            item_type: ClipboardItemType::from_i32(row.get(1)?),
+            summary: row.get(2)?,
+            created_at: row.get(3)?,
+            display_metadata: row.get(4)?,
+        })
+    })?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        if let Ok(item) = row {
+            items.push(item);
+        }
+    }
+    Ok(items)
+}
+
+pub fn get_item_by_id(db_path: &str, id: &str) -> Result<Option<ClipboardItem>> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, type, summary, search_text, text_content, html_content, rtf_content, image_path, file_list_json, created_at, expires_at, content_hash, display_metadata
+         FROM clipboard_items
+         WHERE id = ?1
+         LIMIT 1;"
+    )?;
+
+    let mut rows = stmt.query_map(params![id], |row| {
+        let files_json: Option<String> = row.get(8)?;
+        let files: Option<Vec<FileClipboardEntry>> = files_json
+            .and_then(|json| serde_json::from_str(&json).ok());
+
+        Ok(ClipboardItem {
+            id: row.get(0)?,
+            item_type: ClipboardItemType::from_i32(row.get(1)?),
+            summary: row.get(2)?,
+            search_text: row.get(3)?,
+            text_content: row.get(4)?,
+            html_content: row.get(5)?,
+            rtf_content: row.get(6)?,
+            image_path: row.get(7)?,
+            files,
+            created_at: row.get(9)?,
+            expires_at: row.get(10)?,
+            content_hash: row.get(11)?,
+            display_metadata: row.get(12)?,
+        })
+    })?;
+
+    if let Some(Ok(item)) = rows.next() {
+        Ok(Some(item))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn get_item_preview(db_path: &str, id: &str) -> Result<Option<ClipboardItem>> {
+    let conn = Connection::open(db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, type, summary, search_text, 
+                SUBSTR(text_content, 1, 2005), 
+                SUBSTR(html_content, 1, 10005), 
+                SUBSTR(rtf_content, 1, 10005), 
+                image_path, file_list_json, created_at, expires_at, content_hash, display_metadata
+         FROM clipboard_items
+         WHERE id = ?1
+         LIMIT 1;"
+    )?;
+
+    let mut rows = stmt.query_map(params![id], |row| {
+        let files_json: Option<String> = row.get(8)?;
+        let files: Option<Vec<FileClipboardEntry>> = files_json
+            .and_then(|json| serde_json::from_str(&json).ok());
+
+        let display_metadata: Option<String> = row.get(12)?;
+        let total_chars = display_metadata.as_deref()
+            .and_then(|m| m.strip_suffix(" chars"))
+            .and_then(|num_str| num_str.parse::<usize>().ok());
+
+        let raw_text: Option<String> = row.get(4)?;
+        let text_content = match raw_text {
+            Some(txt) => {
+                let char_count = txt.chars().count();
+                if char_count > 2000 {
+                    let truncated: String = txt.chars().take(2000).collect();
+                    if let Some(total) = total_chars {
+                        Some(format!(
+                            "{}\n\n... [Content truncated, total length: {} characters] ...",
+                            truncated, total
+                        ))
+                    } else {
+                        Some(format!(
+                            "{}\n\n... [Content truncated, total length: >2000 characters] ...",
+                            truncated
+                        ))
+                    }
+                } else {
+                    Some(txt)
+                }
+            }
+            None => None,
+        };
+
+        let raw_html: Option<String> = row.get(5)?;
+        let html_content = match raw_html {
+            Some(html) => {
+                let char_count = html.chars().count();
+                if char_count > 10000 {
+                    let truncated: String = html.chars().take(10000).collect();
+                    if let Some(total) = total_chars {
+                        Some(format!(
+                            "{}<!-- Content truncated, total HTML length: {} characters -->",
+                            truncated, total
+                        ))
+                    } else {
+                        Some(format!(
+                            "{}<!-- Content truncated, total HTML length: >10000 characters -->",
+                            truncated
+                        ))
+                    }
+                } else {
+                    Some(html)
+                }
+            }
+            None => None,
+        };
+
+        let raw_rtf: Option<String> = row.get(6)?;
+        let rtf_content = match raw_rtf {
+            Some(rtf) => {
+                let char_count = rtf.chars().count();
+                if char_count > 10000 {
+                    let truncated: String = rtf.chars().take(10000).collect();
+                    if let Some(total) = total_chars {
+                        Some(format!(
+                            "{}... [RTF Content truncated, total length: {} characters] ...",
+                            truncated, total
+                        ))
+                    } else {
+                        Some(format!(
+                            "{}... [RTF Content truncated, total length: >10000 characters] ...",
+                            truncated
+                        ))
+                    }
+                } else {
+                    Some(rtf)
+                }
+            }
+            None => None,
+        };
+
+        Ok(ClipboardItem {
+            id: row.get(0)?,
+            item_type: ClipboardItemType::from_i32(row.get(1)?),
+            summary: row.get(2)?,
+            search_text: row.get(3)?,
+            text_content,
+            html_content,
+            rtf_content,
+            image_path: row.get(7)?,
+            files,
+            created_at: row.get(9)?,
+            expires_at: row.get(10)?,
+            content_hash: row.get(11)?,
+            display_metadata,
+        })
+    })?;
+
+    if let Some(Ok(item)) = rows.next() {
+        Ok(Some(item))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn get_total_count(db_path: &str, query: &str) -> Result<i32> {

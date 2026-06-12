@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -29,11 +29,73 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 const appWindow = getCurrentWindow();
 
+// Clean raw Windows CF_HTML headers and extract actual HTML content/fragment
+const cleanHtmlContent = (htmlStr) => {
+  if (!htmlStr) return "";
+  
+  // 1. Try to extract content between <!--StartFragment--> and <!--EndFragment-->
+  const fragmentMatch = htmlStr.match(/<!--\s*StartFragment\s*-->([\s\S]*?)<!--\s*EndFragment\s*-->/i);
+  if (fragmentMatch) {
+    return fragmentMatch[1].trim();
+  }
+  
+  // 2. If no fragment comments, but it starts with Version: header, strip the header
+  if (/^Version:\d+\.\d+/i.test(htmlStr)) {
+    // Find the first occurrence of '<' which starts the HTML
+    const htmlStart = htmlStr.indexOf("<");
+    if (htmlStart !== -1) {
+      return htmlStr.substring(htmlStart).trim();
+    }
+    
+    // Fallback: strip lines that look like headers
+    const lines = htmlStr.split(/\r?\n/);
+    const cleanLines = [];
+    let inHeader = true;
+    for (const line of lines) {
+      if (inHeader) {
+        if (/^(Version|StartHTML|EndHTML|StartFragment|EndFragment|SourceURL):/i.test(line)) {
+          continue;
+        }
+        inHeader = false;
+      }
+      cleanLines.push(line);
+    }
+    return cleanLines.join("\n").trim();
+  }
+  
+  return htmlStr.trim();
+};
+
+const truncateText = (text) => {
+  if (!text) return "";
+  if (text.length <= 2000) return text;
+  return text.slice(0, 2000) + `\n\n... [Content truncated, total length: ${text.length} characters] ...`;
+};
+
+// Helper to render file icon based on ext
+const getFileIcon = (isDir, ext) => {
+  if (isDir) return <FolderIcon className="w-4 h-4 text-amber-500" />;
+  const textExts = ["txt", "md", "json", "xml", "csv", "ini", "log"];
+  if (textExts.includes(ext.toLowerCase())) return <FileText className="w-4 h-4 text-blue-500" />;
+  const imgExts = ["png", "jpg", "jpeg", "gif", "bmp", "ico", "svg"];
+  if (imgExts.includes(ext.toLowerCase())) return <ImageIcon className="w-4 h-4 text-green-500" />;
+  return <FileIcon className="w-4 h-4 text-zinc-500" />;
+};
+
 function App() {
+  console.log("[JS LOG] App component function execution started");
   const [items, setItems] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchQueryRef = useRef("");
+
+  useEffect(() => {
+    console.log("[JS LOG] App component mounted");
+    searchQueryRef.current = searchQuery;
+  }, [searchQuery]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedItemDetails, setSelectedItemDetails] = useState(null);
+  const [detailsLoadingId, setDetailsLoadingId] = useState(null);
   const [statusMessage, setStatusMessage] = useState("Loading...");
   
   // Settings state
@@ -48,11 +110,12 @@ function App() {
   });
   const [settingsSavedMsg, setSettingsSavedMsg] = useState("");
 
-  // Rich Text Preview tab
-  const [richTextTab, setRichTextTab] = useState("preview"); // "preview" | "source"
+
 
   const searchInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
   const listContainerRef = useRef(null);
+  const detailsCacheRef = useRef({});
 
   // Command state
   const [clearCommand, setClearCommand] = useState(null);
@@ -115,33 +178,26 @@ function App() {
   };
 
   // Fetch history from database
-  const refreshHistory = async (queryStr = searchQuery) => {
+  const refreshHistory = async (queryStr = searchQueryRef.current, preserveIndex = false) => {
     try {
-      const cmd = parseClearCommand(queryStr);
-      if (cmd) {
-        setClearCommand(cmd);
-        setItems([]);
-        setSelectedIndex(0);
-        setStatusMessage(cmd.desc);
-        return;
-      }
-      setClearCommand(null);
+      // Run both SQLite search and count queries in parallel
+      const [results, total] = await Promise.all([
+        invoke("search_history", { query: queryStr, limit: 100 }),
+        invoke("get_total_count_cmd", { query: queryStr })
+      ]);
 
-      // Search limit matches standard Raycast/Alfred preview listing limit
-      const results = await invoke("search_history", { query: queryStr, limit: 100 });
       setItems(results);
-      
-      const total = await invoke("get_total_count_cmd", { query: queryStr });
       setTotalCount(total);
       
-      if (results.length > 0) {
-        // Adjust selected index if it is out of range
-        setSelectedIndex((prev) => (prev >= results.length ? results.length - 1 : prev));
-        setStatusMessage(total === 0 ? "No clipboard items yet" : `${total} items`);
+      if (preserveIndex) {
+        setSelectedIndex((prev) => {
+          if (results.length === 0) return 0;
+          return prev >= results.length ? results.length - 1 : prev;
+        });
       } else {
         setSelectedIndex(0);
-        setStatusMessage("No clipboard items yet");
       }
+      setStatusMessage(total === 0 ? "No clipboard items yet" : `${total} items`);
     } catch (err) {
       console.error("Failed to refresh history:", err);
       setStatusMessage("Failed to fetch history");
@@ -162,38 +218,48 @@ function App() {
   };
 
   // Execute copy paste
-  const handleReplay = async (item) => {
+  const handleReplay = useCallback(async (item) => {
     if (!item) return;
     try {
       await invoke("replay_and_paste", { id: item.id });
     } catch (err) {
       console.error("Replay failed:", err);
     }
-  };
+  }, []);
 
   // Delete individual item
   const handleDeleteItem = async (e, item) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    if (!item) return;
     try {
+      if (detailsCacheRef.current[item.id]) {
+        delete detailsCacheRef.current[item.id];
+      }
       await invoke("delete_history_item", { id: item.id });
-      await refreshHistory();
+      await refreshHistory(searchQueryRef.current, true);
     } catch (err) {
       console.error("Delete failed:", err);
     }
   };
 
-  // Execute parsed clear command
-  const handleExecuteClear = async () => {
-    if (!clearCommand || clearCommand.mode === "invalid") return;
+  // Execute parsed clear command directly (no confirmation)
+  const handleExecuteClear = async (cmd) => {
+    if (!cmd || cmd.mode === "invalid") return;
     try {
-      if (clearCommand.mode === "all") {
+      detailsCacheRef.current = {};
+      if (cmd.mode === "all") {
         await invoke("clear_history");
       } else {
         await invoke("execute_clear_command_cmd", {
-          mode: clearCommand.mode,
-          count: clearCommand.count,
-          durationMinutes: clearCommand.duration
+          mode: cmd.mode,
+          count: cmd.count,
+          durationMinutes: cmd.duration
         });
+      }
+      if (searchInputRef.current) {
+        searchInputRef.current.value = "";
       }
       setSearchQuery("");
       setClearCommand(null);
@@ -203,102 +269,139 @@ function App() {
     }
   };
 
-  // Setup event listeners
+  // Tauri event listeners - run once
   useEffect(() => {
     fetchSettings();
     refreshHistory("");
 
-    // Listen to backend events
+    let unlistenUpdated;
+    let unlistenSettings;
+    let unlistenShown;
+
     const setupListeners = async () => {
-      const unlistenUpdated = await listen("clipboard-updated", () => {
+      unlistenUpdated = await listen("clipboard-updated", () => {
         refreshHistory();
       });
-      const unlistenSettings = await listen("open-settings", () => {
+      unlistenSettings = await listen("open-settings", () => {
         setShowSettings(true);
       });
-      const unlistenShown = await listen("window-shown", () => {
+      unlistenShown = await listen("window-shown", () => {
         if (searchInputRef.current) {
           searchInputRef.current.focus();
           searchInputRef.current.select();
         }
         refreshHistory();
       });
-
-      return () => {
-        unlistenUpdated();
-        unlistenSettings();
-        unlistenShown();
-      };
     };
 
-    const cleanupPromise = setupListeners();
+    setupListeners();
 
-    // Keydown listener for global window actions
+    return () => {
+      if (unlistenUpdated) unlistenUpdated();
+      if (unlistenSettings) unlistenSettings();
+      if (unlistenShown) unlistenShown();
+    };
+  }, []);
+
+  // Global keydown listener
+  useEffect(() => {
     const handleGlobalKeyDown = (e) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" || e.key === "Esc") {
+        console.log("[JS LOG] ESC pressed in handleGlobalKeyDown. showSettings:", showSettings, "clearCommand:", !!clearCommand);
         if (showSettings) {
           setShowSettings(false);
-        } else if (searchQuery) {
+        } else if (clearCommand) {
+          setClearCommand(null);
+          if (searchInputRef.current) {
+            searchInputRef.current.value = "";
+          }
           setSearchQuery("");
           refreshHistory("");
         } else {
-          appWindow.hide();
+          if (searchInputRef.current) {
+            searchInputRef.current.value = "";
+          }
+          setSearchQuery("");
+          refreshHistory("");
+          console.log("[JS LOG] ESC pressed: calling hide_window command");
+          invoke("hide_window").catch((err) => console.error("[JS LOG] Failed to hide window:", err));
         }
+        return;
+      }
+
+      // Ignore other keys if settings modal is open
+      if (showSettings) {
+        return;
+      }
+
+      if (clearCommand) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleExecuteClear(clearCommand);
+        }
+        return;
+      }
+
+      // Execute clear command directly on Enter (no confirmation)
+      if (e.key === "Enter") {
+        const inputVal = searchInputRef.current?.value || "";
+        const cmd = parseClearCommand(inputVal);
+        if (cmd && cmd.mode !== "invalid") {
+          e.preventDefault();
+          handleExecuteClear(cmd);
+          return;
+        }
+      }
+
+      if (items.length === 0) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev + 1 >= items.length ? 0 : prev + 1;
+          const itemEl = document.getElementById(`item-${next}`);
+          if (itemEl) itemEl.scrollIntoView({ block: "nearest" });
+          return next;
+        });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => {
+          const next = prev - 1 < 0 ? items.length - 1 : prev - 1;
+          const itemEl = document.getElementById(`item-${next}`);
+          if (itemEl) itemEl.scrollIntoView({ block: "nearest" });
+          return next;
+        });
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        handleReplay(items[selectedIndex]);
+      } else if (e.key === "Delete" || e.key === "Del" || (e.key === "d" && e.ctrlKey)) {
+        e.preventDefault();
+        handleDeleteItem(e, items[selectedIndex]);
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
-
     return () => {
       window.removeEventListener("keydown", handleGlobalKeyDown);
-      cleanupPromise.then(cleanup => cleanup && cleanup());
     };
-  }, [showSettings, searchQuery]);
+  }, [showSettings, clearCommand, items, selectedIndex, handleReplay]);
 
   // Handle search text changes
   const handleSearchChange = (e) => {
     const val = e.target.value;
-    setSearchQuery(val);
-    refreshHistory(val);
+    
+    // Clear previous timeout to debounce the query
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Set 120ms debounce
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(val);
+      refreshHistory(val);
+    }, 120);
   };
 
-  // Navigate items using keyboard
-  const handleKeyDown = (e) => {
-    if (clearCommand) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleExecuteClear();
-      }
-      return;
-    }
 
-    if (items.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedIndex((prev) => {
-        const next = prev + 1 >= items.length ? 0 : prev + 1;
-        // Scroll into view
-        const itemEl = document.getElementById(`item-${next}`);
-        if (itemEl) itemEl.scrollIntoView({ block: "nearest" });
-        return next;
-      });
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedIndex((prev) => {
-        const next = prev - 1 < 0 ? items.length - 1 : prev - 1;
-        // Scroll into view
-        const itemEl = document.getElementById(`item-${next}`);
-        if (itemEl) itemEl.scrollIntoView({ block: "nearest" });
-        return next;
-      });
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      handleReplay(items[selectedIndex]);
-    } else if (e.key === "Delete" || (e.key === "d" && e.ctrlKey)) {
-      e.preventDefault();
-      handleDeleteItem(e, items[selectedIndex]);
-    }
-  };
 
   // Format relative timestamps
   const formatTime = (isoString) => {
@@ -326,15 +429,166 @@ function App() {
 
   const selectedItem = items[selectedIndex];
 
-  // Helper to render file icon based on ext
-  const getFileIcon = (isDir, ext) => {
-    if (isDir) return <FolderIcon className="w-4 h-4 text-amber-500" />;
-    const textExts = ["txt", "md", "json", "xml", "csv", "ini", "log"];
-    if (textExts.includes(ext.toLowerCase())) return <FileText className="w-4 h-4 text-blue-500" />;
-    const imgExts = ["png", "jpg", "jpeg", "gif", "bmp", "ico", "svg"];
-    if (imgExts.includes(ext.toLowerCase())) return <ImageIcon className="w-4 h-4 text-green-500" />;
-    return <FileIcon className="w-4 h-4 text-zinc-500" />;
-  };
+  // Fetch details of selected item asynchronously (debounced)
+  useEffect(() => {
+    const selectedItem = items[selectedIndex];
+    if (!selectedItem) {
+      setSelectedItemDetails(null);
+      setDetailsLoadingId(null);
+      return;
+    }
+
+    const itemId = selectedItem.id;
+    // Check cache first — show cached content immediately, no loading state
+    if (detailsCacheRef.current[itemId]) {
+      setSelectedItemDetails(detailsCacheRef.current[itemId]);
+      setDetailsLoadingId(null);
+      return;
+    }
+
+    // Clear previous details immediately to avoid showing stale content
+    // but do NOT set loading yet (wait for debounce)
+    let isCurrent = true;
+    
+    // Short debounce before starting the fetch
+    const timer = setTimeout(() => {
+      if (!isCurrent) return;
+      
+      // Only show loading for THIS specific item
+      setDetailsLoadingId(itemId);
+      invoke("get_item_details", { id: itemId })
+        .then((details) => {
+          if (isCurrent) {
+            if (details) {
+              detailsCacheRef.current[itemId] = details;
+            }
+            setSelectedItemDetails(details);
+            setDetailsLoadingId(null);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to fetch item details:", err);
+          if (isCurrent) {
+            setSelectedItemDetails(null);
+            setDetailsLoadingId(null);
+          }
+        });
+    }, 80); // 80ms debounce — fast enough to feel instant for cached items
+
+    return () => {
+      isCurrent = false;
+      clearTimeout(timer);
+      // When cursor moves away, clear loading state for old item
+      setDetailsLoadingId((prev) => prev === itemId ? null : prev);
+    };
+  }, [selectedIndex, items]);
+
+  const previewPanel = useMemo(() => {
+    if (detailsLoadingId && detailsLoadingId === selectedItem?.id && !selectedItemDetails) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center gap-2">
+          <Clock className="w-12 h-12 text-zinc-200 animate-spin" />
+          <h3 className="text-sm font-bold text-zinc-800">Loading details...</h3>
+        </div>
+      );
+    }
+    
+    if (selectedItemDetails && selectedItemDetails.id === selectedItem?.id) {
+      return (
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Text Preview */}
+          {selectedItemDetails.type === 1 && (
+            <div className="w-full h-full flex flex-col">
+              <pre className="flex-1 bg-zinc-50/50 p-4 rounded-xl font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-y-auto select-text selection:bg-indigo-100">
+                {truncateText(selectedItemDetails.textContent)}
+              </pre>
+            </div>
+          )}
+
+          {/* Rich Text Preview */}
+          {selectedItemDetails.type === 4 && (
+            <div className="w-full h-full overflow-hidden bg-white min-h-[300px]">
+              {selectedItemDetails.htmlContent ? (
+                <iframe
+                  srcDoc={`<!DOCTYPE html><html><head><style>body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #18181b; background-color: #ffffff; line-height: 1.5; font-size: 14px; }</style></head><body>${cleanHtmlContent(selectedItemDetails.htmlContent)}</body></html>`}
+                  className="w-full h-full border-none bg-white"
+                  sandbox="allow-same-origin"
+                />
+              ) : (
+                <pre className="p-4 font-mono text-xs whitespace-pre-wrap bg-zinc-50 h-full text-zinc-600 rounded-xl">
+                  {truncateText(selectedItemDetails.textContent)}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {/* Image Preview */}
+          {selectedItemDetails.type === 2 && (
+            <div className="w-full h-full flex flex-col items-center justify-center p-4 min-h-[300px]">
+              {selectedItemDetails.imagePath ? (
+                <div className="flex flex-col items-center gap-4 max-w-full">
+                  <img
+                    src={convertFileSrc(selectedItemDetails.imagePath)}
+                    alt="Captured clipboard data"
+                    className="max-h-[360px] max-w-full object-contain rounded-lg shadow-md border border-zinc-200 bg-white"
+                    draggable="false"
+                  />
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-zinc-950">
+                      Dimensions: {selectedItemDetails.displayMetadata || "Unknown"}
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-1 truncate max-w-md select-text font-mono">
+                      Path: {selectedItemDetails.imagePath}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-zinc-400">
+                  <ImageIcon className="w-12 h-12 mx-auto stroke-[1.5] text-zinc-300 mb-2" />
+                  <p className="text-sm">Image cache file missing</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* File List Preview */}
+          {selectedItemDetails.type === 3 && (
+            <div className="w-full h-full flex flex-col">
+              <div className="flex-1 overflow-hidden divide-y divide-zinc-100 bg-white overflow-y-auto">
+                {selectedItemDetails.files?.map((file, fIdx) => (
+                  <div key={fIdx} className="p-3 flex items-center gap-3 hover:bg-zinc-50/60 select-text">
+                    <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
+                      {getFileIcon(file.isDirectory, file.extension)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-900 truncate">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-zinc-400 truncate font-mono">
+                        {file.path}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center gap-2">
+        <Sparkles className="w-12 h-12 text-zinc-200 stroke-[1.2]" />
+        <h3 className="text-sm font-bold text-zinc-800">Preview Selected Item</h3>
+        <p className="text-xs max-w-[280px]">
+          Select any clipboard entry from the list to view its formatted content details.
+        </p>
+      </div>
+    );
+  }, [selectedItemDetails, detailsLoadingId, selectedItem?.id]);
+
+
 
   return (
     <div className="w-full h-full p-4 box-border relative select-none">
@@ -349,14 +603,22 @@ function App() {
             type="text"
             className="flex-1 bg-transparent border-0 outline-none text-zinc-900 placeholder-zinc-400 text-lg"
             placeholder="Search clipboard history... (e.g. type 'clear 5' to clean)"
-            value={searchQuery}
+            defaultValue={searchQuery}
             onChange={handleSearchChange}
-            onKeyDown={handleKeyDown}
             autoFocus
           />
           {searchQuery && (
             <button 
-              onClick={() => { setSearchQuery(""); refreshHistory(""); }}
+              onClick={() => {
+                if (searchTimeoutRef.current) {
+                  clearTimeout(searchTimeoutRef.current);
+                }
+                if (searchInputRef.current) {
+                  searchInputRef.current.value = "";
+                }
+                setSearchQuery("");
+                refreshHistory("");
+              }}
               className="p-1 hover:bg-zinc-200 rounded text-zinc-400 hover:text-zinc-600 transition"
             >
               <X className="w-4 h-4" />
@@ -440,22 +702,22 @@ function App() {
                       <div
                         id={`item-${idx}`}
                         key={item.id}
-                        onClick={() => setSelectedIndex(idx)}
-                        onDoubleClick={() => handleReplay(item)}
-                        className={`group flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        onClick={() => handleReplay(item)}
+                        className={`group flex items-start gap-2.5 py-1.5 px-2 rounded-lg cursor-pointer transition-all border ${
                           isSelected 
                             ? "bg-indigo-600/[0.08] border-indigo-600/20 text-indigo-900" 
                             : "bg-transparent border-transparent hover:bg-zinc-200/50"
                         }`}
                       >
                         {/* Type Icon */}
-                        <div className={`p-2 rounded-lg mt-0.5 ${
+                        <div className={`w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg mt-0.5 ${
                           isSelected ? "bg-indigo-600/10 text-indigo-600" : "bg-zinc-200/60 text-zinc-600"
                         }`}>
-                          {item.type === 0 && <span className="font-bold text-xs select-none block w-4 h-4 text-center leading-4">T</span>}
-                          {item.type === 3 && <span className="font-bold text-xs select-none block w-4 h-4 text-center leading-4">RT</span>}
-                          {item.type === 1 && <ImageIcon className="w-4 h-4" />}
-                          {item.type === 2 && <FileIcon className="w-4 h-4" />}
+                          {item.type === 1 && <span className="font-bold text-[10px] select-none text-center">T</span>}
+                          {item.type === 4 && <span className="font-bold text-[10px] select-none text-center">RT</span>}
+                          {item.type === 2 && <ImageIcon className="w-3.5 h-3.5" />}
+                          {item.type === 3 && <FileIcon className="w-3.5 h-3.5" />}
                         </div>
 
                         {/* Summary Details */}
@@ -465,29 +727,26 @@ function App() {
                           }`}>
                             {item.summary || "No Summary"}
                           </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[11px] text-zinc-400 font-medium">
-                              {formatTime(item.createdAt)}
+                          {item.displayMetadata && (
+                            <span className="text-[11px] text-zinc-400 truncate max-w-[150px] block mt-0.5">
+                              {item.displayMetadata}
                             </span>
-                            {item.displayMetadata && (
-                              <>
-                                <span className="text-[10px] text-zinc-300">•</span>
-                                <span className="text-[11px] text-zinc-400 truncate max-w-[120px]">
-                                  {item.displayMetadata}
-                                </span>
-                              </>
-                            )}
-                          </div>
+                          )}
                         </div>
 
-                        {/* Action buttons */}
-                        <button
-                          onClick={(e) => handleDeleteItem(e, item)}
-                          className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-zinc-200 rounded-lg text-zinc-400 hover:text-red-600 transition self-center"
-                          title="Delete (Delete)"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Right side info & actions */}
+                        <div className="flex items-center gap-1.5 flex-shrink-0 self-center">
+                          <span className="text-[11px] text-zinc-400 font-medium">
+                            {formatTime(item.createdAt)}
+                          </span>
+                          <button
+                            onClick={(e) => handleDeleteItem(e, item)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-zinc-200 rounded text-zinc-400 hover:text-red-600 transition"
+                            title="Delete (Delete)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     );
                   })
@@ -497,158 +756,7 @@ function App() {
 
             {/* Right Preview Panel */}
             <div className="flex-1 bg-white flex flex-col overflow-hidden">
-              {selectedItem ? (
-                <div className="flex-1 flex flex-col overflow-hidden">
-                  
-                  {/* Preview Header / Metadata */}
-                  <div className="px-6 py-4 border-b border-zinc-200/60 flex items-center justify-between bg-zinc-50/10">
-                    <div>
-                      <h4 className="text-sm font-bold text-zinc-950 flex items-center gap-1.5">
-                        {selectedItem.type === 0 && <span>Text Document</span>}
-                        {selectedItem.type === 3 && <span>Rich Text Document</span>}
-                        {selectedItem.type === 1 && <span>Captured Image</span>}
-                        {selectedItem.type === 2 && <span>Files List</span>}
-                      </h4>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        Created {new Date(selectedItem.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => handleReplay(selectedItem)}
-                      className="py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm"
-                    >
-                      Paste Content <CornerDownLeft className="w-3 h-3" />
-                    </button>
-                  </div>
-
-                  {/* Preview Body */}
-                  <div className="flex-1 overflow-y-auto p-6">
-                    
-                    {/* Text Preview */}
-                    {selectedItem.type === 0 && (
-                      <div className="w-full h-full flex flex-col">
-                        <pre className="flex-1 bg-zinc-50 p-4 border border-zinc-200/80 rounded-xl font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-y-auto select-text selection:bg-indigo-100">
-                          {selectedItem.textContent}
-                        </pre>
-                      </div>
-                    )}
-
-                    {/* Rich Text Preview */}
-                    {selectedItem.type === 3 && (
-                      <div className="w-full h-full flex flex-col gap-3">
-                        <div className="flex border-b border-zinc-200">
-                          <button
-                            onClick={() => setRichTextTab("preview")}
-                            className={`py-2 px-4 border-b-2 font-medium text-xs transition ${
-                              richTextTab === "preview" 
-                                ? "border-indigo-600 text-indigo-600" 
-                                : "border-transparent text-zinc-500 hover:text-zinc-700"
-                            }`}
-                          >
-                            Rendered Preview
-                          </button>
-                          <button
-                            onClick={() => setRichTextTab("source")}
-                            className={`py-2 px-4 border-b-2 font-medium text-xs transition ${
-                              richTextTab === "source" 
-                                ? "border-indigo-600 text-indigo-600" 
-                                : "border-transparent text-zinc-500 hover:text-zinc-700"
-                            }`}
-                          >
-                            Source HTML
-                          </button>
-                        </div>
-                        <div className="flex-1 border border-zinc-200 rounded-xl overflow-hidden bg-white min-h-[300px]">
-                          {richTextTab === "preview" ? (
-                            selectedItem.htmlContent ? (
-                              <iframe
-                                srcDoc={`<!DOCTYPE html><html><head><style>body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #18181b; background-color: #ffffff; line-height: 1.5; font-size: 14px; }</style></head><body>${selectedItem.htmlContent}</body></html>`}
-                                className="w-full h-full border-none bg-white"
-                                sandbox="allow-same-origin"
-                              />
-                            ) : (
-                              <pre className="p-4 font-mono text-xs whitespace-pre-wrap bg-zinc-50 h-full text-zinc-600">
-                                {selectedItem.textContent}
-                              </pre>
-                            )
-                          ) : (
-                            <pre className="p-4 font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-auto h-full bg-zinc-50 select-text">
-                              {selectedItem.htmlContent || "No HTML source content available."}
-                            </pre>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Image Preview */}
-                    {selectedItem.type === 1 && (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-50/50 border border-zinc-200/80 rounded-xl p-4 min-h-[300px]">
-                        {selectedItem.imagePath ? (
-                          <div className="flex flex-col items-center gap-4 max-w-full">
-                            <img
-                              src={convertFileSrc(selectedItem.imagePath)}
-                              alt="Captured clipboard data"
-                              className="max-h-[360px] max-w-full object-contain rounded-lg shadow-md border border-zinc-200 bg-white"
-                              draggable="false"
-                            />
-                            <div className="text-center">
-                              <p className="text-sm font-semibold text-zinc-900">
-                                Dimensions: {selectedItem.displayMetadata || "Unknown"}
-                              </p>
-                              <p className="text-xs text-zinc-400 mt-1 truncate max-w-md select-text font-mono">
-                                Path: {selectedItem.imagePath}
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-center text-zinc-400">
-                            <ImageIcon className="w-12 h-12 mx-auto stroke-[1.5] text-zinc-300 mb-2" />
-                            <p className="text-sm">Image cache file missing</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* File List Preview */}
-                    {selectedItem.type === 2 && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between py-2 border-b border-zinc-100">
-                          <span className="text-sm font-bold text-zinc-900">
-                            {selectedItem.files?.length || 0} items in file clipboard
-                          </span>
-                        </div>
-                        <div className="border border-zinc-200/80 rounded-xl overflow-hidden divide-y divide-zinc-100 bg-white shadow-sm max-h-[380px] overflow-y-auto">
-                          {selectedItem.files?.map((file, fIdx) => (
-                            <div key={fIdx} className="p-3 flex items-center gap-3 hover:bg-zinc-50/60 select-text">
-                              <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
-                                {getFileIcon(file.isDirectory, file.extension)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-zinc-900 truncate">
-                                  {file.name}
-                                </p>
-                                <p className="text-xs text-zinc-400 truncate font-mono">
-                                  {file.path}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center gap-2">
-                  <Sparkles className="w-12 h-12 text-zinc-200 stroke-[1.2]" />
-                  <h3 className="text-sm font-bold text-zinc-800">Preview Selected Item</h3>
-                  <p className="text-xs max-w-[280px]">
-                    Select any clipboard entry from the list to view its formatted content details.
-                  </p>
-                </div>
-              )}
+              {previewPanel}
             </div>
 
           </div>
@@ -686,8 +794,8 @@ function App() {
 
         {/* Settings Modal (Overlay) */}
         {showSettings && (
-          <div className="absolute inset-0 bg-zinc-950/20 backdrop-blur-sm z-50 flex items-center justify-center p-8 transition-all duration-200">
-            <div className="bg-white border border-zinc-200 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-full animate-in fade-in zoom-in-95 duration-150">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-md z-50 flex items-center justify-center p-8">
+            <div className="bg-white border border-zinc-200 rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[80%] overflow-hidden">
               
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-zinc-200/80 flex items-center justify-between bg-zinc-50/50">

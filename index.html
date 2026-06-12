@@ -5,10 +5,57 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauri + React</title>
+    <script type="module">
+      import { invoke } from "@tauri-apps/api/core";
+      
+      window.addEventListener("error", (e) => {
+        invoke("log_from_js", { msg: `ERROR: ${e.message} at ${e.filename}:${e.lineno}:${e.colno}` }).catch(() => {});
+      });
+      window.addEventListener("unhandledrejection", (e) => {
+        invoke("log_from_js", { msg: `UNHANDLED REJECTION: ${e.reason}` }).catch(() => {});
+      });
+      
+      const originalError = console.error;
+      console.error = (...args) => {
+        invoke("log_from_js", { msg: `console.error: ${args.join(" ")}` }).catch(() => {});
+        originalError.apply(console, args);
+      };
+      
+      const originalLog = console.log;
+      console.log = (...args) => {
+        invoke("log_from_js", { msg: `console.log: ${args.join(" ")}` }).catch(() => {});
+        originalLog.apply(console, args);
+      };
+
+      const originalWarn = console.warn;
+      console.warn = (...args) => {
+        invoke("log_from_js", { msg: `console.warn: ${args.join(" ")}` }).catch(() => {});
+        originalWarn.apply(console, args);
+      };
+      
+      invoke("log_from_js", { msg: "index.html loaded and error capture script initialized" }).catch(() => {});
+      
+      window.addEventListener("DOMContentLoaded", () => {
+        invoke("log_from_js", { msg: `DOMContentLoaded: root element exists: ${!!document.getElementById("root")}` }).catch(() => {});
+      });
+      
+      window.addEventListener("load", () => {
+        invoke("log_from_js", { msg: "window load event fired" }).catch(() => {});
+      });
+    </script>
   </head>
 
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module">
+      import { invoke } from "@tauri-apps/api/core";
+      import("/src/main.jsx")
+        .then(() => {
+          invoke("log_from_js", { msg: "main.jsx dynamic import succeeded" }).catch(() => {});
+        })
+        .catch((err) => {
+          invoke("log_from_js", { msg: `main.jsx dynamic import FAILED: ${err} | message: ${err.message} | stack: ${err.stack}` }).catch(() => {});
+        });
+    </script>
   </body>
 </html>
