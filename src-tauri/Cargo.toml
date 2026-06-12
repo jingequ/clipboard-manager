@@ -1,0 +1,37 @@
+[package]
+name = "clipboard-manager"
+version = "1.0.0"
+description = "A lightweight high-performance clipboard history manager"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "clipboard_manager_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0-rc", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0-rc", features = ["image-ico", "image-png", "tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+clipboard-master = "4.0.0"
+winreg = "0.52.0"
+lazy_static = "1.4.0"
+uuid = { version = "1.8.0", features = ["v4"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+sha2 = "0.10.8"
+image = "0.25.1"
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_Graphics_Gdi"
+] }
