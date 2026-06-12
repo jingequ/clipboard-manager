@@ -522,12 +522,15 @@ fn main() {
                     show_window(&window);
                 }
 
-                let window_clone = window.clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = window_clone.hide();
-                    }
-                });
+                #[cfg(not(debug_assertions))]
+                {
+                    let window_clone = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            let _ = window_clone.hide();
+                        }
+                    });
+                }
             }
 
             Ok(())
