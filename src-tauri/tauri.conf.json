@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Clipboard Manager",
         "width": 1120,
         "height": 700,

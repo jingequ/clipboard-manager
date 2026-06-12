@@ -517,6 +517,11 @@ fn main() {
 
             // Setup main window lose focus event
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(debug_assertions)]
+                {
+                    show_window(&window);
+                }
+
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
