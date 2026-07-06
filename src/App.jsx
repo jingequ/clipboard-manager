@@ -97,6 +97,7 @@ function App() {
   const [selectedItemDetails, setSelectedItemDetails] = useState(null);
   const [detailsLoadingId, setDetailsLoadingId] = useState(null);
   const [statusMessage, setStatusMessage] = useState("Loading...");
+  const [showHtmlSource, setShowHtmlSource] = useState(false);
   
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -123,48 +124,57 @@ function App() {
   // Parse custom clear command
   const parseClearCommand = (query) => {
     if (!query) return null;
-    const trimmed = query.trim();
-    if (trimmed.toLowerCase() === "clear") {
+    const trimmed = query.trim().toLowerCase();
+    
+    // Check if it starts with "clear" or "clean"
+    const isClear = trimmed.startsWith("clear");
+    const isClean = trimmed.startsWith("clean");
+    if (!isClear && !isClean) return null;
+    
+    // Determine the keyword length (both "clear" and "clean" are 5 chars)
+    const keywordLen = 5;
+    
+    // Get the remainder of the string
+    const remainder = trimmed.slice(keywordLen).trim();
+    
+    // If no remainder, it means the command is exactly "clear" or "clean"
+    if (remainder === "") {
       return { mode: "all", desc: "删除全部记录", count: 0, duration: 0 };
     }
-    if (trimmed.toLowerCase().startsWith("clear ")) {
-      const arg = trimmed.slice(6).trim();
-      
-      // Check for numeric count
-      const count = parseInt(arg, 10);
-      if (!isNaN(count) && String(count) === arg) {
-        if (count > 0) {
-          return { mode: "count", desc: `删除前 ${count} 条记录 (最新)`, count, duration: 0 };
-        } else if (count < 0) {
-          return { mode: "count", desc: `删除后 ${-count} 条记录 (最旧)`, count, duration: 0 };
-        } else {
-          return { mode: "count", desc: "不删除记录 (n=0)", count: 0, duration: 0 };
-        }
+    
+    // Parse numeric count
+    const count = parseInt(remainder, 10);
+    if (!isNaN(count) && String(count) === remainder) {
+      if (count > 0) {
+        return { mode: "count", desc: `删除前 ${count} 条记录 (最新)`, count, duration: 0 };
+      } else if (count < 0) {
+        return { mode: "count", desc: `删除后 ${-count} 条记录 (最旧)`, count, duration: 0 };
+      } else {
+        return { mode: "count", desc: "不删除记录 (n=0)", count: 0, duration: 0 };
       }
-
-      // Check for time duration: e.g. 1d, 12h, 30m
-      if (arg.toLowerCase().endsWith("d")) {
-        const days = parseInt(arg.slice(0, -1), 10);
-        if (!isNaN(days) && days > 0) {
-          return { mode: "recent", desc: `删除近 ${days} 天的记录`, count: 0, duration: days * 1440 };
-        }
-      }
-      if (arg.toLowerCase().endsWith("h")) {
-        const hours = parseInt(arg.slice(0, -1), 10);
-        if (!isNaN(hours) && hours > 0) {
-          return { mode: "recent", desc: `删除近 ${hours} 小时的记录`, count: 0, duration: hours * 60 };
-        }
-      }
-      if (arg.toLowerCase().endsWith("m")) {
-        const minutes = parseInt(arg.slice(0, -1), 10);
-        if (!isNaN(minutes) && minutes > 0) {
-          return { mode: "recent", desc: `删除近 ${minutes} 分钟的记录`, count: 0, duration: minutes };
-        }
-      }
-
-      return { mode: "invalid", desc: "无效清除命令。用法: clear 5, clear -5, clear 1d, clear 30m", count: 0, duration: 0 };
     }
-    return null;
+
+    // Parse time duration: e.g. 1d, 12h, 30m
+    if (remainder.endsWith("d")) {
+      const days = parseInt(remainder.slice(0, -1).trim(), 10);
+      if (!isNaN(days) && days > 0) {
+        return { mode: "recent", desc: `删除近 ${days} 天的记录`, count: 0, duration: days * 1440 };
+      }
+    }
+    if (remainder.endsWith("h")) {
+      const hours = parseInt(remainder.slice(0, -1).trim(), 10);
+      if (!isNaN(hours) && hours > 0) {
+        return { mode: "recent", desc: `删除近 ${hours} 小时的记录`, count: 0, duration: hours * 60 };
+      }
+    }
+    if (remainder.endsWith("m")) {
+      const minutes = parseInt(remainder.slice(0, -1).trim(), 10);
+      if (!isNaN(minutes) && minutes > 0) {
+        return { mode: "recent", desc: `删除近 ${minutes} 分钟的记录`, count: 0, duration: minutes };
+      }
+    }
+
+    return { mode: "invalid", desc: "无效清除命令。用法: clear 5, clear -5, clear 1d, clear 30m", count: 0, duration: 0 };
   };
 
   // Fetch settings from Rust backend
@@ -346,9 +356,11 @@ function App() {
       if (e.key === "Enter") {
         const inputVal = searchInputRef.current?.value || "";
         const cmd = parseClearCommand(inputVal);
-        if (cmd && cmd.mode !== "invalid") {
+        if (cmd) {
           e.preventDefault();
-          handleExecuteClear(cmd);
+          if (cmd.mode !== "invalid") {
+            handleExecuteClear(cmd);
+          }
           return;
         }
       }
@@ -431,6 +443,7 @@ function App() {
 
   // Fetch details of selected item asynchronously (debounced)
   useEffect(() => {
+    setShowHtmlSource(false);
     const selectedItem = items[selectedIndex];
     if (!selectedItem) {
       setSelectedItemDetails(null);
@@ -495,11 +508,11 @@ function App() {
     
     if (selectedItemDetails && selectedItemDetails.id === selectedItem?.id) {
       return (
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 flex flex-col min-h-0 p-6">
           {/* Text Preview */}
           {selectedItemDetails.type === 1 && (
-            <div className="w-full h-full flex flex-col">
-              <pre className="flex-1 bg-zinc-50/50 p-4 rounded-xl font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-y-auto select-text selection:bg-indigo-100">
+            <div className="w-full h-full flex flex-col min-h-0">
+              <pre className="flex-1 bg-zinc-50/50 p-4 rounded-xl font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-y-auto select-text selection:bg-indigo-100 border border-zinc-200/60">
                 {truncateText(selectedItemDetails.textContent)}
               </pre>
             </div>
@@ -507,17 +520,60 @@ function App() {
 
           {/* Rich Text Preview */}
           {selectedItemDetails.type === 4 && (
-            <div className="w-full h-full overflow-hidden bg-white min-h-[300px]">
+            <div className="w-full h-full flex flex-col min-h-0 bg-white">
               {selectedItemDetails.htmlContent ? (
-                <iframe
-                  srcDoc={`<!DOCTYPE html><html><head><style>body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #18181b; background-color: #ffffff; line-height: 1.5; font-size: 14px; }</style></head><body>${cleanHtmlContent(selectedItemDetails.htmlContent)}</body></html>`}
-                  className="w-full h-full border-none bg-white"
-                  sandbox="allow-same-origin"
-                />
+                <div className="flex flex-col h-full min-h-0">
+                  {/* Toolbar for switching between Preview & Source */}
+                  <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4 select-none">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-500">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Rich Text (富文本)</span>
+                    </div>
+                    <div className="flex bg-zinc-100 p-0.5 rounded-lg border border-zinc-200/50">
+                      <button
+                        onClick={() => setShowHtmlSource(false)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                          !showHtmlSource
+                            ? "bg-white text-zinc-950 shadow-sm"
+                            : "text-zinc-600 hover:text-zinc-950"
+                        }`}
+                      >
+                        预览 (Preview)
+                      </button>
+                      <button
+                        onClick={() => setShowHtmlSource(true)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                          showHtmlSource
+                            ? "bg-white text-zinc-950 shadow-sm"
+                            : "text-zinc-600 hover:text-zinc-950"
+                        }`}
+                      >
+                        源码 (Source)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content area */}
+                  <div className="flex-1 min-h-0 bg-white">
+                    {showHtmlSource ? (
+                      <pre className="w-full h-full bg-zinc-50 p-4 rounded-xl font-mono text-xs text-zinc-800 whitespace-pre-wrap overflow-y-auto select-text selection:bg-indigo-100 border border-zinc-200/60">
+                        {selectedItemDetails.htmlContent}
+                      </pre>
+                    ) : (
+                      <iframe
+                        srcDoc={`<!DOCTYPE html><html><head><style>body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #18181b; background-color: #ffffff; line-height: 1.5; font-size: 14px; }</style></head><body>${cleanHtmlContent(selectedItemDetails.htmlContent)}</body></html>`}
+                        className="w-full h-full border border-zinc-200/60 rounded-xl bg-white"
+                        sandbox="allow-same-origin"
+                      />
+                    )}
+                  </div>
+                </div>
               ) : (
-                <pre className="p-4 font-mono text-xs whitespace-pre-wrap bg-zinc-50 h-full text-zinc-600 rounded-xl">
-                  {truncateText(selectedItemDetails.textContent)}
-                </pre>
+                <div className="w-full h-full flex flex-col min-h-0">
+                  <pre className="flex-1 p-4 font-mono text-xs whitespace-pre-wrap bg-zinc-50 text-zinc-600 rounded-xl overflow-y-auto">
+                    {truncateText(selectedItemDetails.textContent)}
+                  </pre>
+                </div>
               )}
             </div>
           )}
@@ -553,8 +609,8 @@ function App() {
 
           {/* File List Preview */}
           {selectedItemDetails.type === 3 && (
-            <div className="w-full h-full flex flex-col">
-              <div className="flex-1 overflow-hidden divide-y divide-zinc-100 bg-white overflow-y-auto">
+            <div className="w-full h-full flex flex-col min-h-0">
+              <div className="flex-1 overflow-hidden divide-y divide-zinc-100 bg-white overflow-y-auto border border-zinc-200/60 rounded-xl">
                 {selectedItemDetails.files?.map((file, fIdx) => (
                   <div key={fIdx} className="p-3 flex items-center gap-3 hover:bg-zinc-50/60 select-text">
                     <div className="p-2 bg-zinc-100 rounded-lg text-zinc-600">
@@ -564,7 +620,7 @@ function App() {
                       <p className="text-sm font-semibold text-zinc-900 truncate">
                         {file.name}
                       </p>
-                      <p className="text-xs text-zinc-400 truncate font-mono">
+                      <p className="text-xs text-zinc-400 break-all font-mono">
                         {file.path}
                       </p>
                     </div>
@@ -586,7 +642,7 @@ function App() {
         </p>
       </div>
     );
-  }, [selectedItemDetails, detailsLoadingId, selectedItem?.id]);
+  }, [selectedItemDetails, detailsLoadingId, selectedItem?.id, showHtmlSource]);
 
 
 
