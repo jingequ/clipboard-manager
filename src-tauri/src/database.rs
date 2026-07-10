@@ -496,12 +496,17 @@ pub fn delete_latest(db_path: &str, count: i32) -> Result<i32> {
 
     let conn = Connection::open(db_path)?;
     let sql = if count > 0 {
+        // Positive: delete the N newest items (top of displayed list)
         "DELETE FROM clipboard_items WHERE id IN (
             SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT ?1
          );"
     } else {
+        // Negative: delete the N oldest items from the DISPLAYED list (bottom of visible items)
+        // First select the visible items (newest 100), then pick the N oldest from those
         "DELETE FROM clipboard_items WHERE id IN (
-            SELECT id FROM clipboard_items ORDER BY created_at ASC LIMIT ?1
+            SELECT sub.id FROM (
+                SELECT id, created_at FROM clipboard_items ORDER BY created_at DESC LIMIT 100
+            ) sub ORDER BY sub.created_at ASC LIMIT ?1
          );"
     };
 
@@ -521,8 +526,11 @@ pub fn get_image_paths_for_latest(db_path: &str, count: i32) -> Result<Vec<Strin
             SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT ?1
          );"
     } else {
+        // From the displayed items (newest 100), pick the N oldest
         "SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL AND id IN (
-            SELECT id FROM clipboard_items ORDER BY created_at ASC LIMIT ?1
+            SELECT sub.id FROM (
+                SELECT id, created_at FROM clipboard_items ORDER BY created_at DESC LIMIT 100
+            ) sub ORDER BY sub.created_at ASC LIMIT ?1
          );"
     };
 
