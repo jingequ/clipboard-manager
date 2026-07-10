@@ -192,7 +192,7 @@ function App() {
     try {
       // Run both SQLite search and count queries in parallel
       const [results, total] = await Promise.all([
-        invoke("search_history", { query: queryStr, limit: 100 }),
+        invoke("search_history", { query: queryStr, limit: 999999 }),
         invoke("get_total_count_cmd", { query: queryStr })
       ]);
 
