@@ -483,7 +483,7 @@ pub fn clear_all(db_path: &str) -> Result<()> {
 pub fn delete_recent(db_path: &str, since: &str) -> Result<i32> {
     let conn = Connection::open(db_path)?;
     let deleted = conn.execute(
-        "DELETE FROM clipboard_items WHERE datetime(created_at) >= datetime(?1);",
+        "DELETE FROM clipboard_items WHERE created_at >= ?1;",
         params![since],
     )?;
     Ok(deleted as i32)
@@ -497,11 +497,11 @@ pub fn delete_latest(db_path: &str, count: i32) -> Result<i32> {
     let conn = Connection::open(db_path)?;
     let sql = if count > 0 {
         "DELETE FROM clipboard_items WHERE id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) DESC LIMIT ?1
+            SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT ?1
          );"
     } else {
         "DELETE FROM clipboard_items WHERE id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) ASC LIMIT ?1
+            SELECT id FROM clipboard_items ORDER BY created_at ASC LIMIT ?1
          );"
     };
 
@@ -518,11 +518,11 @@ pub fn get_image_paths_for_latest(db_path: &str, count: i32) -> Result<Vec<Strin
     let conn = Connection::open(db_path)?;
     let sql = if count > 0 {
         "SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL AND id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) DESC LIMIT ?1
+            SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT ?1
          );"
     } else {
         "SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL AND id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) ASC LIMIT ?1
+            SELECT id FROM clipboard_items ORDER BY created_at ASC LIMIT ?1
          );"
     };
 
@@ -571,7 +571,7 @@ pub fn enforce_max_items(db_path: &str, max_items: i32) -> Result<i32> {
     let conn = Connection::open(db_path)?;
     let deleted = conn.execute(
         "DELETE FROM clipboard_items WHERE id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) DESC LIMIT -1 OFFSET ?1
+            SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT -1 OFFSET ?1
          );",
         params![max_items],
     )?;
@@ -585,7 +585,7 @@ pub fn get_pruned_image_paths_for_max(db_path: &str, max_items: i32) -> Result<V
     let conn = Connection::open(db_path)?;
     let mut stmt = conn.prepare(
         "SELECT image_path FROM clipboard_items WHERE image_path IS NOT NULL AND id IN (
-            SELECT id FROM clipboard_items ORDER BY datetime(created_at) DESC LIMIT -1 OFFSET ?1
+            SELECT id FROM clipboard_items ORDER BY created_at DESC LIMIT -1 OFFSET ?1
          );"
     )?;
     let rows = stmt.query_map(params![max_items], |row| row.get(0))?;
